@@ -62,6 +62,7 @@ struct VertexPosColor
 	XMFLOAT3 Color;
 };
 
+// the vertices and indices of a cube
 VertexPosColor g_Vertices[8] =
 {
 	{ XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, 0.0f) }, // 0
@@ -476,7 +477,6 @@ void Update(float deltaTime)
 	XMVECTOR focusPoint = XMVectorSet(0, 0, 0, 1);
 	XMVECTOR upDirection = XMVectorSet(0, 1, 0, 0);
 	g_ViewMatrix = XMMatrixLookAtLH(eyePosition, focusPoint, upDirection);
-	g_d3dDeviceContext->UpdateSubresource(g_d3dConstantBuffers[ConstantBuffer::CB_Frame], 0, nullptr, &g_ViewMatrix, 0, 0);
 
 	// world(model) matrix
 	XMVECTOR rotationAxis = XMVectorSet(1, 0, 1, 0);
@@ -487,7 +487,6 @@ void Update(float deltaTime)
 	// which means the first transformation operation lies on the first factor of matrix multiplication
 	g_WorldMatrix = XMMatrixScaling(1, (1.2f + cosf(angle)), 1)* XMMatrixRotationAxis(rotationAxis, XMConvertToRadians(angle * 20.0f)) * XMMatrixTranslation(sinf(angle), 0, 0);
 
-	g_d3dDeviceContext->UpdateSubresource(g_d3dConstantBuffers[ConstantBuffer::CB_Object], 0, nullptr, &g_WorldMatrix, 0, 0);
 }
 
 // Clear the color and depth buffers
@@ -514,38 +513,70 @@ void Render()
 	assert(g_d3dDevice);
 	assert(g_d3dDeviceContext);
 
+	// Clear the view. Of course
+	// we need to clear both the view of render target(s) and stencil buffer.
 	Clear(Colors::CornflowerBlue, 1.0f, 0);
+
+
+	// Refresh constant buffer resources with the new data (which is the data updated from Update())
+	g_d3dDeviceContext->UpdateSubresource(g_d3dConstantBuffers[ConstantBuffer::CB_Frame], 0, nullptr, &g_ViewMatrix, 0, 0);
+	g_d3dDeviceContext->UpdateSubresource(g_d3dConstantBuffers[ConstantBuffer::CB_Object], 0, nullptr, &g_WorldMatrix, 0, 0);
+
+
+	/* RS: rasterizer stage
+	* D3D11 Pipeline: RS: rasterizer stage
+	* interpolating various vertex attributes output from the vertex shader
+	* invoke pixel shader program for each screen pixel which is affected by rendered geometry
+	*/
+	// I haven't found the doc telling the order of RS stage, but here is a warning I got when I put RS stage after a Draw(),
+	//    The warning disappeared when I put RS stage before a Draw() so I guess that's where it should be (or at least, roughly)
+	/*
+	* D3D11 WARNING: ID3D11DeviceContext::DrawIndexed: There are no viewports currently bound.
+	* If any rasterization to RenderTarget(s) and/or DepthStencil is performed, results will be undefined.
+	* [ EXECUTION WARNING #384: DEVICE_DRAW_VIEWPORT_NOT_SET]
+	*/
+	g_d3dDeviceContext->RSSetState(g_d3dRasterizerState);
+	g_d3dDeviceContext->RSSetViewports(1, &g_Viewport);
+
+
+	// D3D11 Pipeline: OM: output merger stage
+	// "merges the output from the pixel shader onto the color and depth buffers"
+	// this is the stage where pixels are blended after the shaders are finished.
+	//
+	// OM stage does NOT have to follow a "typical" order when setting up the rendering pipeline
+	// Because:
+	// we may have multiple stencils and targets if we have addtional vertex and pixel shaders
+	//    that generate textures like shadow maps, height maps, or other sampling techniques
+	// in this case, as the code is, we will need to choose appropriate rendering target(s) set
+	//    BEFORE we call a draw function.
+	g_d3dDeviceContext->OMSetRenderTargets(1, &g_d3dRenderTargetView, g_d3dDepthStencilView);
+	g_d3dDeviceContext->OMSetDepthStencilState(g_d3dDepthStencilState, 1);
 
 	// D3D11 Pipeline: IA: input assembler stage
 	const UINT vertexStride = sizeof(VertexPosColor);
 	const UINT offset = 0;
 
 	g_d3dDeviceContext->IASetVertexBuffers(0, 1, &g_d3dVertexBuffer, &vertexStride, &offset);
-	g_d3dDeviceContext->IASetInputLayout(g_d3dInputLayout);
 	g_d3dDeviceContext->IASetIndexBuffer(g_d3dIndexBuffer, DXGI_FORMAT_R16_UINT, 0);
+	g_d3dDeviceContext->IASetInputLayout(g_d3dInputLayout);
 	g_d3dDeviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
 	// D3D11 Pipeline: VS: vertex shader stage
 	g_d3dDeviceContext->VSSetShader(g_d3dVertexShader, nullptr, 0);
 	g_d3dDeviceContext->VSSetConstantBuffers(0, 3, g_d3dConstantBuffers);
 
-	// D3D11 Pipeline: RS: rasterizer stage
-	// interpolating various vertex attributes output from the vertex shader
-	// invoke pixel shader program for each screen pixel which is affected by rendered geometry
-	g_d3dDeviceContext->RSSetState(g_d3dRasterizerState);
-	g_d3dDeviceContext->RSSetViewports(1, &g_Viewport);
+	// finally: we draw the cube
+	g_d3dDeviceContext->DrawIndexed(_countof(g_Indicies), 0, 0);
+
+	/* test my understanding on the rendering pipeline. succeeded
+	g_WorldMatrix = XMMatrixTranslation(2, 0, 0);
+	g_d3dDeviceContext->UpdateSubresource(g_d3dConstantBuffers[ConstantBuffer::CB_Object], 0, nullptr, &g_WorldMatrix, 0, 0);
+	g_d3dDeviceContext->VSSetConstantBuffers(0, 3, g_d3dConstantBuffers);
+	g_d3dDeviceContext->DrawIndexed(_countof(g_Indicies), 0, 0);
+	*/
 
 	// D3D11 Pipeline: PS: pixel shader stage
 	g_d3dDeviceContext->PSSetShader(g_d3dPixelShader, nullptr, 0);
-
-	// D3D11 Pipeline: OM: output merger stage
-	// merges the output from the pixel shader onto the color and depth buffers
-	g_d3dDeviceContext->OMSetRenderTargets(1, &g_d3dRenderTargetView, g_d3dDepthStencilView);
-	g_d3dDeviceContext->OMSetDepthStencilState(g_d3dDepthStencilState, 1);
-
-
-	// finally: we draw the cube
-	g_d3dDeviceContext->DrawIndexed(_countof(g_Indicies), 0, 0);
 
 	Present(g_EnableVSync);
 }
@@ -722,6 +753,13 @@ int InitDirectX(HINSTANCE hInstance, BOOL vSync)
 	swapChainDesc.OutputWindow = g_WindowHandle;
 	swapChainDesc.SampleDesc.Count = 1;
 	swapChainDesc.SampleDesc.Quality = 0;
+	/* DXGI WARNING: IDXGIFactory::CreateSwapChain: Blt-model swap effects (DXGI_SWAP_EFFECT_DISCARD and DXGI_SWAP_EFFECT_SEQUENTIAL) are legacy swap effects 
+	 *     that are predominantly superceded by their flip-model counterparts (DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL and DXGI_SWAP_EFFECT_FLIP_DISCARD). 
+	 *     Please consider updating your application to leverage flip-model swap effects to benefit from modern presentation enhancements. 
+	 *     More information is available at http://aka.ms/dxgiflipmodel. [ MISCELLANEOUS WARNING #294: ]
+	 * I haven't read it carefully but I noticed that there may be something that the newer swapeffects are not able to do
+	 *     So I decided to leave it legacy for now since I haven't fully understood the things here
+	*/
 	swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
 	swapChainDesc.Windowed = TRUE;
 
@@ -857,6 +895,21 @@ int InitDirectX(HINSTANCE hInstance, BOOL vSync)
 
 	return 0;
 }
+
+/* //test __count_of()
+template <typename _MyType, size_t SizeOfArray>
+char(*my_count_of(const _MyType(&_InArrayName)[SizeOfArray]))[SizeOfArray];
+
+int testArr[] = { 1, 2, 3 };
+
+size_t f = (sizeof(*my_count_of(testArr)+0));
+
+
+auto ff = my_count_of(testArr); // this line will result in unresolved symbol because it's a real function call
+char* fff[3];
+char(*ffff)[3] = ff;
+*/
+
 
 int WINAPI wWinMain(
 	_In_ HINSTANCE hInstance,
