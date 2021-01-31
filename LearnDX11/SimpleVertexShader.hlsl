@@ -31,7 +31,7 @@ VertexShaderOutput SimpleVertexShader(AppData IN, uint instanceID : SV_InstanceI
 	VertexShaderOutput OUT;
 	matrix mvp = mul(projectionMatrix, mul(viewMatrix, worldMatrix));
 	float3 posOffset = IN.position;
-	posOffset.x += instanceID * 4.0f;
+	//posOffset.x += instanceID * 4.0f; // This is to test instanceID
 	OUT.position = mul(mvp, float4 (posOffset, 1.0f));
 	//OUT.position = mul(mvp, float4 (IN.position, 1.0f));
 	OUT.color = float4(IN.color, 1.0f);

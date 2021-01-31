@@ -567,7 +567,7 @@ void Render()
 
 	// finally: we draw the cube
 	//g_d3dDeviceContext->DrawIndexed(_countof(g_Indicies), 0, 0);
-	g_d3dDeviceContext->DrawIndexedInstanced(_countof(g_Indicies), 3, 0, 0, 0);
+	g_d3dDeviceContext->DrawIndexedInstanced(_countof(g_Indicies), 1, 0, 0, 0);
 
 	/* test my understanding on the rendering pipeline. succeeded
 	g_WorldMatrix = XMMatrixTranslation(2, 0, 0);
