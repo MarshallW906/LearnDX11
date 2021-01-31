@@ -26,11 +26,14 @@ struct VertexShaderOutput
 	float4 position : SV_POSITION;
 };
 
-VertexShaderOutput SimpleVertexShader(AppData IN)
+VertexShaderOutput SimpleVertexShader(AppData IN, uint instanceID : SV_InstanceID)
 {
 	VertexShaderOutput OUT;
 	matrix mvp = mul(projectionMatrix, mul(viewMatrix, worldMatrix));
-	OUT.position = mul(mvp, float4 (IN.position, 1.0f));
+	float3 posOffset = IN.position;
+	posOffset.x += instanceID * 4.0f;
+	OUT.position = mul(mvp, float4 (posOffset, 1.0f));
+	//OUT.position = mul(mvp, float4 (IN.position, 1.0f));
 	OUT.color = float4(IN.color, 1.0f);
 
 	return OUT;
