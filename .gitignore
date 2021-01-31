@@ -5,8 +5,7 @@
 
 #############################################################
 # My special ignores
-include/VertexShader.h
-include/PixelShader.h
+PreCompiledShaders/
 
 #############################################################
 
