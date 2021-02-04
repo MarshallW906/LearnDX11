@@ -227,7 +227,7 @@ ShaderClass* LoadShader(const std::wstring& filename, const std::string& entryPo
 
 	UINT flags = D3DCOMPILE_ENABLE_STRICTNESS;
 #if _DEBUG
-	flags = D3DCOMPILE_DEBUG;
+	flags |= D3DCOMPILE_DEBUG;
 #endif
 
 	HRESULT hr = D3DCompileFromFile(filename.c_str(), nullptr,
