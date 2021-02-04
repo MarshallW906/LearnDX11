@@ -17,13 +17,15 @@ cbuffer PerObject : register(b2)
 struct AppData
 {
 	float3 position: POSITION;
-	float3 color: COLOR;
+	//float3 color: COLOR;
+	float2 texcoord: TEXCOORD;
 };
 
 struct VertexShaderOutput
 {
-	float4 color : COLOR;
+	//float4 color : COLOR;
 	float4 position : SV_POSITION;
+	float2 texcoord : TEXCOORD;
 };
 
 VertexShaderOutput SimpleVertexShader(AppData IN, uint instanceID : SV_InstanceID)
@@ -34,7 +36,7 @@ VertexShaderOutput SimpleVertexShader(AppData IN, uint instanceID : SV_InstanceI
 	//posOffset.x += instanceID * 4.0f; // This is to test instanceID
 	OUT.position = mul(mvp, float4 (posOffset, 1.0f));
 	//OUT.position = mul(mvp, float4 (IN.position, 1.0f));
-	OUT.color = float4(IN.color, 1.0f);
+	OUT.texcoord = IN.texcoord;
 
 	return OUT;
 }

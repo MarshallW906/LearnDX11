@@ -1,3 +1,5 @@
+#pragma once
+
 // System Includes
 #include <Windows.h>
 
@@ -10,6 +12,8 @@
 // STL
 #include <iostream>
 #include <string>
+
+// 
 
 // Link library dependencies
 // I set them in project settings

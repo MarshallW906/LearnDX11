@@ -1,5 +1,13 @@
 #include "DirectXTemplatePCH.h"
 
+#include "GameContextD3D11.h"
+
+#include "VertexShader.h"
+#include "PixelShader.h"
+
+#include "WICTextureLoader.h"
+
+
 using namespace DirectX;
 
 // global Win32App & general settings
@@ -12,33 +20,29 @@ HWND g_WindowHandle = 0;
 const BOOL g_EnableVSync = TRUE;
 
 
+GameContextD3D11* g_pGameContextD3D11;
+
 // D3D settings
-// Direct3D device and swap chain
-ID3D11Device* g_d3dDevice = nullptr;
-ID3D11DeviceContext* g_d3dDeviceContext = nullptr;
-IDXGISwapChain* g_d3dSwapChain = nullptr;
-
-// Render target view for the back buffer of the swap chain
-ID3D11RenderTargetView* g_d3dRenderTargetView = nullptr;
-// Depth/Stencil view for use as a depth buffer
-ID3D11DepthStencilView* g_d3dDepthStencilView = nullptr;
-// A texture to associate to the depth stencil view
-ID3D11Texture2D* g_d3dDepthStencilBuffer = nullptr;
-
-// Define the functionality of the depth/stencil stages
-ID3D11DepthStencilState* g_d3dDepthStencilState = nullptr;
-// Define the functionality of the rasterizer stage
-ID3D11RasterizerState* g_d3dRasterizerState = nullptr;
-D3D11_VIEWPORT g_Viewport = { 0 };
 
 // Vertex buffer data
 ID3D11InputLayout* g_d3dInputLayout = nullptr;
 ID3D11Buffer* g_d3dVertexBuffer = nullptr;
 ID3D11Buffer* g_d3dIndexBuffer = nullptr;
 
+// texture
+ID3D11Buffer* g_d3dVertexTexcoordBuffer = nullptr;
+ID3D11Buffer* g_d3dIndexTexcoordBuffer = nullptr;
+ID3D11Texture2D* g_pTexture2D = nullptr;
+ID3D11Resource* g_pTexture2DResource = nullptr;
+ID3D11ShaderResourceView* g_pShaderResourceView = nullptr;
+ID3D11SamplerState* g_pSamplerState = nullptr;
+
 // Shader data
-ID3D11VertexShader* g_d3dVertexShader = nullptr;
-ID3D11PixelShader* g_d3dPixelShader = nullptr;
+//ID3D11VertexShader* g_d3dVertexShader = nullptr;
+//ID3D11PixelShader* g_d3dPixelShader = nullptr;
+VertexShader* g_VertexShader = nullptr;
+PixelShader* g_PixelShader = nullptr;
+
 
 // Shader resources
 enum ConstantBuffer
@@ -60,6 +64,12 @@ struct VertexPosColor
 {
 	XMFLOAT3 Position;
 	XMFLOAT3 Color;
+};
+
+struct VertexPosTexcoord
+{
+	XMFLOAT3 Position;
+	XMFLOAT2 TexCoord;
 };
 
 // the vertices and indices of a cube
@@ -85,11 +95,75 @@ WORD g_Indicies[36] =
 	4, 0, 3, 4, 3, 7
 };
 
+VertexPosTexcoord g_VerticesTexcoord[] =
+{
+	// Front Face
+	{XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT2(0.0f, 1.0f)},
+	{XMFLOAT3(-1.0f,  1.0f, -1.0f), XMFLOAT2(0.0f, 0.0f)},
+	{XMFLOAT3(1.0f,  1.0f, -1.0f), XMFLOAT2(1.0f, 0.0f)},
+	{XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT2(1.0f, 1.0f)},
+
+	// Back Face
+	{XMFLOAT3(-1.0f, -1.0f, 1.0f), XMFLOAT2(1.0f, 1.0f)},
+	{XMFLOAT3(1.0f, -1.0f, 1.0f), XMFLOAT2(0.0f, 1.0f)},
+	{XMFLOAT3(1.0f,  1.0f, 1.0f), XMFLOAT2(0.0f, 0.0f)},
+	{XMFLOAT3(-1.0f,  1.0f, 1.0f), XMFLOAT2(1.0f, 0.0f)},
+
+	// Top Face
+	{XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT2(0.0f, 1.0f)},
+	{XMFLOAT3(-1.0f, 1.0f,  1.0f), XMFLOAT2(0.0f, 0.0f)},
+	{XMFLOAT3(1.0f, 1.0f,  1.0f), XMFLOAT2(1.0f, 0.0f)},
+	{XMFLOAT3(1.0f, 1.0f, -1.0f), XMFLOAT2(1.0f, 1.0f)},
+
+	// Bottom Face
+	{XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT2(1.0f, 1.0f)},
+	{XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT2(0.0f, 1.0f)},
+	{XMFLOAT3(1.0f, -1.0f,  1.0f), XMFLOAT2(0.0f, 0.0f)},
+	{XMFLOAT3(-1.0f, -1.0f,  1.0f), XMFLOAT2(1.0f, 0.0f)},
+
+	// Left Face
+	{XMFLOAT3(-1.0f, -1.0f,  1.0f), XMFLOAT2(0.0f, 1.0f)},
+	{XMFLOAT3(-1.0f,  1.0f,  1.0f), XMFLOAT2(0.0f, 0.0f)},
+	{XMFLOAT3(-1.0f,  1.0f, -1.0f), XMFLOAT2(1.0f, 0.0f)},
+	{XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT2(1.0f, 1.0f)},
+
+	// Right Face
+	{XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT2(0.0f, 1.0f)},
+	{XMFLOAT3(1.0f,  1.0f, -1.0f), XMFLOAT2(0.0f, 0.0f)},
+	{XMFLOAT3(1.0f,  1.0f,  1.0f), XMFLOAT2(1.0f, 0.0f)},
+	{XMFLOAT3(1.0f, -1.0f,  1.0f), XMFLOAT2(1.0f, 1.0f)},
+};
+
+WORD g_IndicesTexcoord[] = {
+	// Front Face
+	0,  1,  2,
+	0,  2,  3,
+
+	// Back Face
+	4,  5,  6,
+	4,  6,  7,
+
+	// Top Face
+	8,  9, 10,
+	8, 10, 11,
+
+	// Bottom Face
+	12, 13, 14,
+	12, 14, 15,
+
+	// Left Face
+	16, 17, 18,
+	16, 18, 19,
+
+	// Right Face
+	20, 21, 22,
+	20, 22, 23
+};
+
+
 // Forward declarations
 LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
 
-template <class ShaderClass>
-ShaderClass* LoadShader(const std::wstring& filename, const std::string& entryPoint, const std::string& profile);
 
 bool LoadContent();
 void UnloadContent();
@@ -99,373 +173,6 @@ void Render();
 void Cleanup();
 
 // -------------------------------------------
-
-template<class ShaderClass>
-std::string GetLatestProfile();
-
-template<>
-std::string GetLatestProfile<ID3D11VertexShader>()
-{
-	assert(g_d3dDevice);
-
-	// Query the current feature level
-	D3D_FEATURE_LEVEL featureLevel = g_d3dDevice->GetFeatureLevel();
-
-	switch (featureLevel)
-	{
-	case D3D_FEATURE_LEVEL_11_1:
-	case D3D_FEATURE_LEVEL_11_0:
-	{
-		return "vs_5_0";
-	}
-	break;
-	case D3D_FEATURE_LEVEL_10_1:
-	{
-		return "vs_4_1";
-	}
-	break;
-	case D3D_FEATURE_LEVEL_10_0:
-	{
-		return "vs_4_0";
-	}
-	break;
-	case D3D_FEATURE_LEVEL_9_3:
-	{
-		return "vs_4_0_level_9_3";
-	}
-	break;
-	case D3D_FEATURE_LEVEL_9_2:
-	case D3D_FEATURE_LEVEL_9_1:
-	{
-		return "vs_4_0_level_9_1";
-	}
-	break;
-	} // switch( featureLevel )
-
-	return "";
-}
-
-template<>
-std::string GetLatestProfile<ID3D11PixelShader>()
-{
-	assert(g_d3dDevice);
-
-	// Query the current feature level:
-	D3D_FEATURE_LEVEL featureLevel = g_d3dDevice->GetFeatureLevel();
-	switch (featureLevel)
-	{
-	case D3D_FEATURE_LEVEL_11_1:
-	case D3D_FEATURE_LEVEL_11_0:
-	{
-		return "ps_5_0";
-	}
-	break;
-	case D3D_FEATURE_LEVEL_10_1:
-	{
-		return "ps_4_1";
-	}
-	break;
-	case D3D_FEATURE_LEVEL_10_0:
-	{
-		return "ps_4_0";
-	}
-	break;
-	case D3D_FEATURE_LEVEL_9_3:
-	{
-		return "ps_4_0_level_9_3";
-	}
-	break;
-	case D3D_FEATURE_LEVEL_9_2:
-	case D3D_FEATURE_LEVEL_9_1:
-	{
-		return "ps_4_0_level_9_1";
-	}
-	break;
-	}
-	return "";
-}
-
-template <class ShaderClass>
-ShaderClass* CreateShader(ID3DBlob* pShaderBlob, ID3D11ClassLinkage* pClassLinkage);
-
-template<>
-ID3D11VertexShader* CreateShader<ID3D11VertexShader>(ID3DBlob* pShaderBlob, ID3D11ClassLinkage* pClassLinkage)
-{
-	assert(g_d3dDevice);
-	assert(pShaderBlob);
-
-	ID3D11VertexShader* pVertexShader = nullptr;
-	g_d3dDevice->CreateVertexShader(pShaderBlob->GetBufferPointer(), pShaderBlob->GetBufferSize(), pClassLinkage, &pVertexShader);
-
-	return pVertexShader;
-}
-
-template<>
-ID3D11PixelShader* CreateShader<ID3D11PixelShader>(ID3DBlob* pShaderBlob, ID3D11ClassLinkage* pClassLinkage)
-{
-	assert(g_d3dDevice);
-	assert(pShaderBlob);
-
-	ID3D11PixelShader* pPixelShader = nullptr;
-	g_d3dDevice->CreatePixelShader(pShaderBlob->GetBufferPointer(), pShaderBlob->GetBufferSize(), pClassLinkage, &pPixelShader);
-
-	return pPixelShader;
-}
-
-template <class ShaderClass>
-ShaderClass* LoadShader(const std::wstring& filename, const std::string& entryPoint, const std::string& _profile)
-{
-	ID3DBlob* pShaderBlob = nullptr;
-	ID3DBlob* pErrorBlob = nullptr;
-	ShaderClass* pShader = nullptr;
-
-	std::string profile = _profile;
-	if (profile == "latest")
-	{
-		profile = GetLatestProfile<ShaderClass>();
-	}
-
-	UINT flags = D3DCOMPILE_ENABLE_STRICTNESS;
-#if _DEBUG
-	flags = D3DCOMPILE_DEBUG;
-#endif
-
-	HRESULT hr = D3DCompileFromFile(filename.c_str(), nullptr,
-		D3D_COMPILE_STANDARD_FILE_INCLUDE, entryPoint.c_str(), profile.c_str(),
-		flags, 0, &pShaderBlob, &pErrorBlob);
-
-	if (FAILED(hr))
-	{
-		if (pErrorBlob)
-		{
-			std::string errorMessage = (char*)pErrorBlob->GetBufferPointer();
-			OutputDebugStringA(errorMessage.c_str());
-
-			SafeRelease(pShaderBlob);
-			SafeRelease(pErrorBlob);
-		}
-		return false;
-	}
-
-	pShader = CreateShader<ShaderClass>(pShaderBlob, nullptr);
-	SafeRelease(pShaderBlob);
-	SafeRelease(pErrorBlob);
-
-	return pShader;
-}
-
-bool LoadContent()
-{
-	assert(g_d3dDevice);
-
-	// create and initialize the vertex buffer
-	D3D11_BUFFER_DESC vertexBufferDesc;
-	ZeroMemory(&vertexBufferDesc, sizeof(D3D11_BUFFER_DESC));
-
-	vertexBufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-	vertexBufferDesc.ByteWidth = sizeof(VertexPosColor) * _countof(g_Vertices);
-	vertexBufferDesc.CPUAccessFlags = 0;
-	vertexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
-
-	D3D11_SUBRESOURCE_DATA resourceData;
-	ZeroMemory(&resourceData, sizeof(D3D11_SUBRESOURCE_DATA));
-
-	resourceData.pSysMem = g_Vertices;
-
-	HRESULT hr = g_d3dDevice->CreateBuffer(&vertexBufferDesc, &resourceData, &g_d3dVertexBuffer);
-
-	if (FAILED(hr))
-	{
-		return false;
-	}
-
-	// create and init the index buffer
-	D3D11_BUFFER_DESC indexBufferDesc;
-	ZeroMemory(&indexBufferDesc, sizeof(D3D11_BUFFER_DESC));
-
-	indexBufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
-	indexBufferDesc.ByteWidth = sizeof(WORD) * _countof(g_Indicies);
-	indexBufferDesc.CPUAccessFlags = 0;
-	indexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
-	resourceData.pSysMem = g_Indicies;
-
-	hr = g_d3dDevice->CreateBuffer(&indexBufferDesc, &resourceData, &g_d3dIndexBuffer);
-	if (FAILED(hr))
-	{
-		return false;
-	}
-
-	// create the constant buffers for the variables defined 
-	D3D11_BUFFER_DESC constantBufferDesc;
-	ZeroMemory(&constantBufferDesc, sizeof(D3D11_BUFFER_DESC));
-
-	constantBufferDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-	constantBufferDesc.ByteWidth = sizeof(XMMATRIX);
-	constantBufferDesc.CPUAccessFlags = 0;
-	constantBufferDesc.Usage = D3D11_USAGE_DEFAULT;
-
-	hr = g_d3dDevice->CreateBuffer(&constantBufferDesc, nullptr, &g_d3dConstantBuffers[ConstantBuffer::CB_Application]);
-	if (FAILED(hr))
-	{
-		return false;
-	}
-
-	hr = g_d3dDevice->CreateBuffer(&constantBufferDesc, nullptr, &g_d3dConstantBuffers[ConstantBuffer::CB_Frame]);
-	if (FAILED(hr))
-	{
-		return false;
-	}
-
-	hr = g_d3dDevice->CreateBuffer(&constantBufferDesc, nullptr, &g_d3dConstantBuffers[ConstantBuffer::CB_Object]);
-	if (FAILED(hr))
-	{
-		return false;
-	}
-
-	/*
-		// Load shaders at Runtime
-		// Note: This will probably not work properly
-		// since it is not followed by a CreateVertexShader accordingly
-		g_d3dVertexShader = LoadShader<ID3D11VertexShader>(L"../data/shaders/SimpleVertexShader.hlsl", "SimpleVertexShader", "latest");
-		g_d3dPixelShader = LoadShader<ID3D11PixelShader>(L"../data/shaders/SimplePixelShader.hlsl", "SimplePixelShader", "latest");
-	*/
-
-	// Load the pre-compiled (by visual studio) vertex shader
-	ID3DBlob* vertexShaderBlob;
-#if _DEBUG
-	LPCWSTR compiledVertexShaderObject = L"SimpleVertexShader_d.cso";
-#else
-	LPCWSTR compiledVertexShaderObject = L"SimpleVertexShader.cso";
-#endif
-
-	hr = D3DReadFileToBlob(compiledVertexShaderObject, &vertexShaderBlob);
-	if (FAILED(hr))
-	{
-		return false;
-	}
-
-	hr = g_d3dDevice->CreateVertexShader(vertexShaderBlob->GetBufferPointer(), vertexShaderBlob->GetBufferSize(), nullptr, &g_d3dVertexShader);
-	if (FAILED(hr))
-	{
-		return false;
-	}
-
-	// create the input layout for the vertex shader
-	D3D11_INPUT_ELEMENT_DESC vertexLayoutDesc[] = {
-		{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, offsetof(VertexPosColor, Position), D3D11_INPUT_PER_VERTEX_DATA, 0},
-		{ "COLOR", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, offsetof(VertexPosColor,Color), D3D11_INPUT_PER_VERTEX_DATA, 0 }
-	};
-
-	hr = g_d3dDevice->CreateInputLayout(vertexLayoutDesc, _countof(vertexLayoutDesc), vertexShaderBlob->GetBufferPointer(), vertexShaderBlob->GetBufferSize(), &g_d3dInputLayout);
-	if (FAILED(hr))
-	{
-		return false;
-	}
-
-	SafeRelease(vertexShaderBlob);
-
-	// Load the compiled pixel shader.
-	ID3DBlob* pixelShaderBlob;
-#if _DEBUG
-	LPCWSTR compiledPixelShaderObject = L"SimplePixelShader_d.cso";
-#else
-	LPCWSTR compiledPixelShaderObject = L"SimplePixelShader.cso";
-#endif
-
-	hr = D3DReadFileToBlob(compiledPixelShaderObject, &pixelShaderBlob);
-	if (FAILED(hr))
-	{
-		return false;
-	}
-
-	hr = g_d3dDevice->CreatePixelShader(pixelShaderBlob->GetBufferPointer(), pixelShaderBlob->GetBufferSize(), nullptr, &g_d3dPixelShader);
-	if (FAILED(hr))
-	{
-		return false;
-	}
-
-	SafeRelease(pixelShaderBlob);
-
-	// setup the projection matrix
-	RECT clientRect;
-	GetClientRect(g_WindowHandle, &clientRect);
-
-	// Compute the exact client dimensions
-	// This is required for a correct projection matrix
-	float clientWidth = static_cast<float>(clientRect.right - clientRect.left);
-	float clientHeight = static_cast<float>(clientRect.bottom - clientRect.top);
-
-	g_ProjectionMatrix = XMMatrixPerspectiveFovLH(XMConvertToRadians(45.0f), clientWidth / clientHeight, 0.1f, 100.0f);
-	g_d3dDeviceContext->UpdateSubresource(g_d3dConstantBuffers[ConstantBuffer::CB_Application], 0, nullptr, &g_ProjectionMatrix, 0, 0);
-
-	return true;
-}
-
-// -------------------------------------------
-
-/**
- * Initialize the application window.
- */
-int InitApplication(HINSTANCE hInstance, int cmdShow)
-{
-	WNDCLASSEX wndClass = { 0 };
-	wndClass.cbSize = sizeof(WNDCLASSEX);
-	wndClass.style = CS_HREDRAW | CS_VREDRAW;
-	wndClass.lpfnWndProc = &WndProc;
-	wndClass.hInstance = hInstance;
-	wndClass.hCursor = LoadCursor(nullptr, IDC_ARROW);
-	wndClass.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
-	wndClass.lpszMenuName = nullptr;
-	wndClass.lpszClassName = g_WindowClassName;
-
-	if (!RegisterClassEx(&wndClass))
-	{
-		return -1;
-	}
-
-	RECT windowRect = { 0, 0, g_WindowWidth, g_WindowHeight };
-	AdjustWindowRect(&windowRect, WS_OVERLAPPEDWINDOW, FALSE);
-
-	g_WindowHandle = CreateWindow(g_WindowClassName, g_WindowName,
-		WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
-		windowRect.right - windowRect.left,
-		windowRect.bottom - windowRect.top,
-		nullptr, nullptr, hInstance, nullptr);
-
-	if (!g_WindowHandle)
-	{
-		return -1;
-	}
-
-	ShowWindow(g_WindowHandle, cmdShow);
-	UpdateWindow(g_WindowHandle);
-
-	return 0;
-}
-
-LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
-{
-	PAINTSTRUCT paintStruct;
-	HDC hDC;
-
-	switch (message)
-	{
-	case WM_PAINT:
-	{
-		hDC = BeginPaint(hwnd, &paintStruct);
-		EndPaint(hwnd, &paintStruct);
-	}
-	break;
-	case WM_DESTROY:
-	{
-		PostQuitMessage(0);
-	}
-	break;
-	default:
-		return DefWindowProc(hwnd, message, wParam, lParam);
-	}
-	return 0;
-}
 
 void Update(float deltaTime)
 {
@@ -485,33 +192,33 @@ void Update(float deltaTime)
 
 	// all XMMatrix's matrices are row-major
 	// which means the first transformation operation lies on the first factor of matrix multiplication
-	g_WorldMatrix = XMMatrixScaling(1, (1.2f + cosf(angle)), 1)* XMMatrixRotationAxis(rotationAxis, XMConvertToRadians(angle * 20.0f)) * XMMatrixTranslation(sinf(angle), 0, 0);
+	g_WorldMatrix = XMMatrixScaling(1, (1.2f + cosf(angle)), 1) * XMMatrixRotationAxis(rotationAxis, XMConvertToRadians(angle * 20.0f)) * XMMatrixTranslation(sinf(angle), 0, 0);
 
 }
 
 // Clear the color and depth buffers
 void Clear(const FLOAT clearColor[4], FLOAT clearDepth, UINT8 clearStencil)
 {
-	g_d3dDeviceContext->ClearRenderTargetView(g_d3dRenderTargetView, clearColor);
-	g_d3dDeviceContext->ClearDepthStencilView(g_d3dDepthStencilView, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, clearDepth, clearStencil);
+	g_pGameContextD3D11->m_d3dDeviceContext->ClearRenderTargetView(g_pGameContextD3D11->m_d3dRenderTargetView, clearColor);
+	g_pGameContextD3D11->m_d3dDeviceContext->ClearDepthStencilView(g_pGameContextD3D11->m_d3dDepthStencilView, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, clearDepth, clearStencil);
 }
 
 void Present(bool vSync)
 {
 	if (vSync)
 	{
-		g_d3dSwapChain->Present(1, 0);
+		g_pGameContextD3D11->m_d3dSwapChain->Present(1, 0);
 	}
 	else
 	{
-		g_d3dSwapChain->Present(0, 0);
+		g_pGameContextD3D11->m_d3dSwapChain->Present(0, 0);
 	}
 }
 
 void Render()
 {
-	assert(g_d3dDevice);
-	assert(g_d3dDeviceContext);
+	assert(g_pGameContextD3D11->m_d3dDevice);
+	assert(g_pGameContextD3D11->m_d3dDeviceContext);
 
 	// Clear the view. Of course
 	// we need to clear both the view of render target(s) and stencil buffer.
@@ -519,8 +226,8 @@ void Render()
 
 
 	// Refresh constant buffer resources with the new data (which is the data updated from Update())
-	g_d3dDeviceContext->UpdateSubresource(g_d3dConstantBuffers[ConstantBuffer::CB_Frame], 0, nullptr, &g_ViewMatrix, 0, 0);
-	g_d3dDeviceContext->UpdateSubresource(g_d3dConstantBuffers[ConstantBuffer::CB_Object], 0, nullptr, &g_WorldMatrix, 0, 0);
+	g_pGameContextD3D11->m_d3dDeviceContext->UpdateSubresource(g_d3dConstantBuffers[ConstantBuffer::CB_Frame], 0, nullptr, &g_ViewMatrix, 0, 0);
+	g_pGameContextD3D11->m_d3dDeviceContext->UpdateSubresource(g_d3dConstantBuffers[ConstantBuffer::CB_Object], 0, nullptr, &g_WorldMatrix, 0, 0);
 
 
 	/* RS: rasterizer stage
@@ -535,8 +242,8 @@ void Render()
 	* If any rasterization to RenderTarget(s) and/or DepthStencil is performed, results will be undefined.
 	* [ EXECUTION WARNING #384: DEVICE_DRAW_VIEWPORT_NOT_SET]
 	*/
-	g_d3dDeviceContext->RSSetState(g_d3dRasterizerState);
-	g_d3dDeviceContext->RSSetViewports(1, &g_Viewport);
+	g_pGameContextD3D11->m_d3dDeviceContext->RSSetState(g_pGameContextD3D11->m_d3dRasterizerState);
+	g_pGameContextD3D11->m_d3dDeviceContext->RSSetViewports(1, &g_pGameContextD3D11->m_Viewport);
 
 
 	// D3D11 Pipeline: OM: output merger stage
@@ -549,37 +256,217 @@ void Render()
 	//    that generate textures like shadow maps, height maps, or other sampling techniques
 	// in this case, as the code is, we will need to choose appropriate rendering target(s) set
 	//    BEFORE we call a draw function.
-	g_d3dDeviceContext->OMSetRenderTargets(1, &g_d3dRenderTargetView, g_d3dDepthStencilView);
-	g_d3dDeviceContext->OMSetDepthStencilState(g_d3dDepthStencilState, 1);
+	g_pGameContextD3D11->m_d3dDeviceContext->OMSetRenderTargets(1, &g_pGameContextD3D11->m_d3dRenderTargetView, g_pGameContextD3D11->m_d3dDepthStencilView);
+	g_pGameContextD3D11->m_d3dDeviceContext->OMSetDepthStencilState(g_pGameContextD3D11->m_d3dDepthStencilState, 1);
 
 	// D3D11 Pipeline: IA: input assembler stage
-	const UINT vertexStride = sizeof(VertexPosColor);
+	//const UINT vertexStride = sizeof(VertexPosColor);
+	const UINT vertexStride = sizeof(VertexPosTexcoord);
 	const UINT offset = 0;
 
-	g_d3dDeviceContext->IASetVertexBuffers(0, 1, &g_d3dVertexBuffer, &vertexStride, &offset);
-	g_d3dDeviceContext->IASetIndexBuffer(g_d3dIndexBuffer, DXGI_FORMAT_R16_UINT, 0);
-	g_d3dDeviceContext->IASetInputLayout(g_d3dInputLayout);
-	g_d3dDeviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	/*
+	g_pGameContextD3D11->m_d3dDeviceContext->IASetVertexBuffers(0, 1, &g_d3dVertexBuffer, &vertexStride, &offset);
+	g_pGameContextD3D11->m_d3dDeviceContext->IASetIndexBuffer(g_d3dIndexBuffer, DXGI_FORMAT_R16_UINT, 0);
+	*/
+	g_pGameContextD3D11->m_d3dDeviceContext->IASetVertexBuffers(0, 1, &g_d3dVertexTexcoordBuffer, &vertexStride, &offset);
+	g_pGameContextD3D11->m_d3dDeviceContext->IASetIndexBuffer(g_d3dIndexTexcoordBuffer, DXGI_FORMAT_R16_UINT, 0);
+	////g_pGameContextD3D11->m_d3dDeviceContext->IASetInputLayout(g_d3dInputLayout);
+	g_pGameContextD3D11->m_d3dDeviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
 	// D3D11 Pipeline: VS: vertex shader stage
-	g_d3dDeviceContext->VSSetShader(g_d3dVertexShader, nullptr, 0);
-	g_d3dDeviceContext->VSSetConstantBuffers(0, 3, g_d3dConstantBuffers);
-
-	// finally: we draw the cube
-	//g_d3dDeviceContext->DrawIndexed(_countof(g_Indicies), 0, 0);
-	g_d3dDeviceContext->DrawIndexedInstanced(_countof(g_Indicies), 1, 0, 0, 0);
+	////g_pGameContextD3D11->m_d3dDeviceContext->VSSetShader(g_d3dVertexShader, nullptr, 0);
+	g_VertexShader->BindInputLayoutAndShader(); // IASetInputLayout, VSSetShader
+	g_pGameContextD3D11->m_d3dDeviceContext->VSSetConstantBuffers(0, 3, g_d3dConstantBuffers);
 
 	/* test my understanding on the rendering pipeline. succeeded
 	g_WorldMatrix = XMMatrixTranslation(2, 0, 0);
-	g_d3dDeviceContext->UpdateSubresource(g_d3dConstantBuffers[ConstantBuffer::CB_Object], 0, nullptr, &g_WorldMatrix, 0, 0);
-	g_d3dDeviceContext->VSSetConstantBuffers(0, 3, g_d3dConstantBuffers);
-	g_d3dDeviceContext->DrawIndexed(_countof(g_Indicies), 0, 0);
+	g_pGameContextD3D11->m_d3dDeviceContext->UpdateSubresource(g_d3dConstantBuffers[ConstantBuffer::CB_Object], 0, nullptr, &g_WorldMatrix, 0, 0);
+	g_pGameContextD3D11->m_d3dDeviceContext->VSSetConstantBuffers(0, 3, g_d3dConstantBuffers);
+	g_pGameContextD3D11->m_d3dDeviceContext->DrawIndexed(_countof(g_Indicies), 0, 0);
 	*/
 
 	// D3D11 Pipeline: PS: pixel shader stage
-	g_d3dDeviceContext->PSSetShader(g_d3dPixelShader, nullptr, 0);
+	////g_pGameContextD3D11->m_d3dDeviceContext->PSSetShader(g_d3dPixelShader, nullptr, 0);
+	g_PixelShader->BindPixelShader(); // PSSetShader
+	g_pGameContextD3D11->m_d3dDeviceContext->PSSetShaderResources(0, 1, &g_pShaderResourceView);
+	g_pGameContextD3D11->m_d3dDeviceContext->PSSetSamplers(0, 1, &g_pSamplerState);
+
+	// finally: we draw the cube
+	//g_pGameContextD3D11->m_d3dDeviceContext->DrawIndexed(_countof(g_Indicies), 0, 0);
+	g_pGameContextD3D11->m_d3dDeviceContext->DrawIndexedInstanced(_countof(g_Indicies), 1, 0, 0, 0);
+
 
 	Present(g_EnableVSync);
+}
+
+bool LoadContent()
+{
+	assert(g_pGameContextD3D11->m_d3dDevice);
+
+	{// create and initialize the vertex buffer & index buffer
+		D3D11_BUFFER_DESC vertexBufferDesc;
+		ZeroMemory(&vertexBufferDesc, sizeof(D3D11_BUFFER_DESC));
+
+		vertexBufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+		vertexBufferDesc.ByteWidth = sizeof(VertexPosColor) * _countof(g_Vertices);
+		vertexBufferDesc.CPUAccessFlags = 0;
+		vertexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
+
+		D3D11_SUBRESOURCE_DATA resourceData;
+		ZeroMemory(&resourceData, sizeof(D3D11_SUBRESOURCE_DATA));
+
+		resourceData.pSysMem = g_Vertices;
+
+		HRESULT hr = g_pGameContextD3D11->m_d3dDevice->CreateBuffer(&vertexBufferDesc, &resourceData, &g_d3dVertexBuffer);
+
+		if (FAILED(hr))
+		{
+			return false;
+		}
+
+		// index buffer
+		D3D11_BUFFER_DESC indexBufferDesc;
+		ZeroMemory(&indexBufferDesc, sizeof(D3D11_BUFFER_DESC));
+
+		indexBufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
+		indexBufferDesc.ByteWidth = sizeof(WORD) * _countof(g_Indicies);
+		indexBufferDesc.CPUAccessFlags = 0;
+		indexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
+		resourceData.pSysMem = g_Indicies;
+
+		hr = g_pGameContextD3D11->m_d3dDevice->CreateBuffer(&indexBufferDesc, &resourceData, &g_d3dIndexBuffer);
+		if (FAILED(hr))
+		{
+			return false;
+		}
+	}
+
+	{// create vertex & index buffer for the textured cube
+		D3D11_BUFFER_DESC indexBufferDesc2;
+		ZeroMemory(&indexBufferDesc2, sizeof(indexBufferDesc2));
+		indexBufferDesc2.Usage = D3D11_USAGE_DEFAULT;
+		indexBufferDesc2.ByteWidth = sizeof(WORD) * _countof(g_IndicesTexcoord);
+		indexBufferDesc2.BindFlags = D3D11_BIND_INDEX_BUFFER;
+		indexBufferDesc2.CPUAccessFlags = 0;
+		indexBufferDesc2.MiscFlags = 0;
+		D3D11_SUBRESOURCE_DATA resourceData2;
+		resourceData2.pSysMem = g_IndicesTexcoord;
+		HRESULT hr = g_pGameContextD3D11->m_d3dDevice->CreateBuffer(&indexBufferDesc2, &resourceData2, &g_d3dIndexTexcoordBuffer);
+		if (FAILED(hr))
+		{
+			return false;
+		}
+
+		D3D11_BUFFER_DESC vertexBufferDesc2;
+		ZeroMemory(&vertexBufferDesc2, sizeof(vertexBufferDesc2));
+		vertexBufferDesc2.Usage = D3D11_USAGE_DEFAULT;
+		vertexBufferDesc2.ByteWidth = sizeof(VertexPosTexcoord) * _countof(g_VerticesTexcoord);
+		vertexBufferDesc2.CPUAccessFlags = 0;
+		vertexBufferDesc2.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+		vertexBufferDesc2.MiscFlags = 0;
+		resourceData2.pSysMem = g_VerticesTexcoord;
+		hr = g_pGameContextD3D11->m_d3dDevice->CreateBuffer(&vertexBufferDesc2, &resourceData2, &g_d3dVertexTexcoordBuffer);
+		if (FAILED(hr))
+		{
+			return false;
+		}
+	}
+	{// load texture from a file
+		HRESULT hr = CreateWICTextureFromFile(
+			g_pGameContextD3D11->m_d3dDevice,
+			g_pGameContextD3D11->m_d3dDeviceContext,
+			L"../Textures/test.png",
+			&g_pTexture2DResource,
+			&g_pShaderResourceView
+			);
+		if (FAILED(hr))
+		{
+			return false;
+		}
+
+		// also here we can use 
+		// g_pTexture2DResource->GetType(D3D11_RESOURCE_DIMENSION*)
+		// to get the type during runtime if we do not know what exactly the type is
+		hr = g_pTexture2DResource->QueryInterface(IID_ID3D11Texture2D, (void**)&g_pTexture2D);
+		if (FAILED(hr))
+		{
+			return false;
+		}
+		
+		D3D11_SAMPLER_DESC samplerDesc;
+		ZeroMemory(&samplerDesc, sizeof(samplerDesc));
+		samplerDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+		samplerDesc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
+		samplerDesc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
+		samplerDesc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
+		samplerDesc.ComparisonFunc = D3D11_COMPARISON_NEVER;
+		samplerDesc.MinLOD = 0;
+		samplerDesc.MaxLOD = D3D11_FLOAT32_MAX;
+
+		hr = g_pGameContextD3D11->m_d3dDevice->CreateSamplerState(&samplerDesc, &g_pSamplerState);
+		if (FAILED(hr))
+		{
+			return false;
+		}
+		
+	}
+
+	{// create the constant buffers for the variables defined 
+		D3D11_BUFFER_DESC constantBufferDesc;
+		ZeroMemory(&constantBufferDesc, sizeof(D3D11_BUFFER_DESC));
+
+		constantBufferDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+		constantBufferDesc.ByteWidth = sizeof(XMMATRIX);
+		constantBufferDesc.CPUAccessFlags = 0;
+		constantBufferDesc.Usage = D3D11_USAGE_DEFAULT;
+
+		HRESULT hr = g_pGameContextD3D11->m_d3dDevice->CreateBuffer(&constantBufferDesc, nullptr, &g_d3dConstantBuffers[ConstantBuffer::CB_Application]);
+		if (FAILED(hr))
+		{
+			return false;
+		}
+
+		hr = g_pGameContextD3D11->m_d3dDevice->CreateBuffer(&constantBufferDesc, nullptr, &g_d3dConstantBuffers[ConstantBuffer::CB_Frame]);
+		if (FAILED(hr))
+		{
+			return false;
+		}
+
+		hr = g_pGameContextD3D11->m_d3dDevice->CreateBuffer(&constantBufferDesc, nullptr, &g_d3dConstantBuffers[ConstantBuffer::CB_Object]);
+		if (FAILED(hr))
+		{
+			return false;
+		}
+	}
+
+	{// set input layout and compile shader
+		D3D11_INPUT_ELEMENT_DESC vertexLayoutDesc[] = {
+			{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, offsetof(VertexPosColor, Position), D3D11_INPUT_PER_VERTEX_DATA, 0},
+			//{ "COLOR", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, offsetof(VertexPosColor,Color), D3D11_INPUT_PER_VERTEX_DATA, 0 }
+			{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, offsetof(VertexPosColor,Color), D3D11_INPUT_PER_VERTEX_DATA, 0 }
+		};
+
+		g_VertexShader = new VertexShader(g_pGameContextD3D11);
+		g_VertexShader->LoadFromFileAndCompile(L"../Shaders/SimpleVertexShader.hlsl", "SimpleVertexShader", "latest", vertexLayoutDesc, _countof(vertexLayoutDesc));
+
+		g_PixelShader = new PixelShader(g_pGameContextD3D11);
+		g_PixelShader->LoadFromFileAndCompile(L"../Shaders/SimplePixelShader.hlsl", "SimplePixelShader", "latest");
+	}
+
+
+	{// setup the projection matrix
+		RECT clientRect;
+		GetClientRect(g_WindowHandle, &clientRect);
+
+		// Compute the exact client dimensions
+		// This is required for a correct projection matrix
+		float clientWidth = static_cast<float>(clientRect.right - clientRect.left);
+		float clientHeight = static_cast<float>(clientRect.bottom - clientRect.top);
+
+		g_ProjectionMatrix = XMMatrixPerspectiveFovLH(XMConvertToRadians(45.0f), clientWidth / clientHeight, 0.1f, 100.0f);
+		g_pGameContextD3D11->m_d3dDeviceContext->UpdateSubresource(g_d3dConstantBuffers[ConstantBuffer::CB_Application], 0, nullptr, &g_ProjectionMatrix, 0, 0);
+	}
+	return true;
 }
 
 void UnloadContent()
@@ -590,20 +477,16 @@ void UnloadContent()
 	SafeRelease(g_d3dIndexBuffer);
 	SafeRelease(g_d3dVertexBuffer);
 	SafeRelease(g_d3dInputLayout);
-	SafeRelease(g_d3dVertexShader);
-	SafeRelease(g_d3dPixelShader);
+	//SafeRelease(g_d3dVertexShader);
+	//SafeRelease(g_d3dPixelShader);
+	delete(g_VertexShader);
+	delete(g_PixelShader);
 }
 
 void Cleanup()
 {
-	SafeRelease(g_d3dDepthStencilView);
-	SafeRelease(g_d3dRenderTargetView);
-	SafeRelease(g_d3dDepthStencilBuffer);
-	SafeRelease(g_d3dDepthStencilState);
-	SafeRelease(g_d3dRasterizerState);
-	SafeRelease(g_d3dSwapChain);
-	SafeRelease(g_d3dDeviceContext);
-	SafeRelease(g_d3dDevice);
+	g_pGameContextD3D11->Release();
+	delete(g_pGameContextD3D11);
 }
 
 // The main application loop
@@ -727,12 +610,73 @@ DXGI_RATIONAL QueryRefreshRate(UINT screenWidth, UINT screenHeight, BOOL vsync)
 	return refreshRate;
 }
 
+LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
+{
+	PAINTSTRUCT paintStruct;
+	HDC hDC;
 
+	switch (message)
+	{
+	case WM_PAINT:
+	{
+		hDC = BeginPaint(hwnd, &paintStruct);
+		EndPaint(hwnd, &paintStruct);
+	}
+	break;
+	case WM_DESTROY:
+	{
+		PostQuitMessage(0);
+	}
+	break;
+	default:
+		return DefWindowProc(hwnd, message, wParam, lParam);
+	}
+	return 0;
+}
+//Initialize the application window.
+int InitApplication(HINSTANCE hInstance, int cmdShow)
+{
+	WNDCLASSEX wndClass = { 0 };
+	wndClass.cbSize = sizeof(WNDCLASSEX);
+	wndClass.style = CS_HREDRAW | CS_VREDRAW;
+	wndClass.lpfnWndProc = &WndProc;
+	wndClass.hInstance = hInstance;
+	wndClass.hCursor = LoadCursor(nullptr, IDC_ARROW);
+	wndClass.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+	wndClass.lpszMenuName = nullptr;
+	wndClass.lpszClassName = g_WindowClassName;
+
+	if (!RegisterClassEx(&wndClass))
+	{
+		return -1;
+	}
+
+	RECT windowRect = { 0, 0, g_WindowWidth, g_WindowHeight };
+	AdjustWindowRect(&windowRect, WS_OVERLAPPEDWINDOW, FALSE);
+
+	g_WindowHandle = CreateWindow(g_WindowClassName, g_WindowName,
+		WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
+		windowRect.right - windowRect.left,
+		windowRect.bottom - windowRect.top,
+		nullptr, nullptr, hInstance, nullptr);
+
+	if (!g_WindowHandle)
+	{
+		return -1;
+	}
+
+	ShowWindow(g_WindowHandle, cmdShow);
+	UpdateWindow(g_WindowHandle);
+
+	return 0;
+}
 
 int InitDirectX(HINSTANCE hInstance, BOOL vSync)
 {
 	// A window handle must have been created already
 	assert(g_WindowHandle != 0);
+
+	g_pGameContextD3D11 = new GameContextD3D11();
 
 	RECT clientRect;
 	GetClientRect(g_WindowHandle, &clientRect);
@@ -754,9 +698,9 @@ int InitDirectX(HINSTANCE hInstance, BOOL vSync)
 	swapChainDesc.OutputWindow = g_WindowHandle;
 	swapChainDesc.SampleDesc.Count = 1;
 	swapChainDesc.SampleDesc.Quality = 0;
-	/* DXGI WARNING: IDXGIFactory::CreateSwapChain: Blt-model swap effects (DXGI_SWAP_EFFECT_DISCARD and DXGI_SWAP_EFFECT_SEQUENTIAL) are legacy swap effects 
-	 *     that are predominantly superceded by their flip-model counterparts (DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL and DXGI_SWAP_EFFECT_FLIP_DISCARD). 
-	 *     Please consider updating your application to leverage flip-model swap effects to benefit from modern presentation enhancements. 
+	/* DXGI WARNING: IDXGIFactory::CreateSwapChain: Blt-model swap effects (DXGI_SWAP_EFFECT_DISCARD and DXGI_SWAP_EFFECT_SEQUENTIAL) are legacy swap effects
+	 *     that are predominantly superceded by their flip-model counterparts (DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL and DXGI_SWAP_EFFECT_FLIP_DISCARD).
+	 *     Please consider updating your application to leverage flip-model swap effects to benefit from modern presentation enhancements.
 	 *     More information is available at http://aka.ms/dxgiflipmodel. [ MISCELLANEOUS WARNING #294: ]
 	 * I haven't read it carefully but I noticed that there may be something that the newer swapeffects are not able to do
 	 *     So I decided to leave it legacy for now since I haven't fully understood the things here
@@ -787,8 +731,8 @@ int InitDirectX(HINSTANCE hInstance, BOOL vSync)
 	HRESULT hr = D3D11CreateDeviceAndSwapChain(
 		nullptr, D3D_DRIVER_TYPE_HARDWARE,
 		nullptr, createDeviceFlags, featureLevels, _countof(featureLevels),
-		D3D11_SDK_VERSION, &swapChainDesc, &g_d3dSwapChain, &g_d3dDevice, &featureLevel,
-		&g_d3dDeviceContext
+		D3D11_SDK_VERSION, &swapChainDesc, &g_pGameContextD3D11->m_d3dSwapChain, &g_pGameContextD3D11->m_d3dDevice, &featureLevel,
+		&g_pGameContextD3D11->m_d3dDeviceContext
 	);
 
 	if (hr == E_INVALIDARG)
@@ -796,8 +740,8 @@ int InitDirectX(HINSTANCE hInstance, BOOL vSync)
 		hr = D3D11CreateDeviceAndSwapChain(
 			nullptr, D3D_DRIVER_TYPE_HARDWARE,
 			nullptr, createDeviceFlags, &featureLevels[1], _countof(featureLevels) - 1,
-			D3D11_SDK_VERSION, &swapChainDesc, &g_d3dSwapChain, &g_d3dDevice, &featureLevel,
-			&g_d3dDeviceContext
+			D3D11_SDK_VERSION, &swapChainDesc, &g_pGameContextD3D11->m_d3dSwapChain, &g_pGameContextD3D11->m_d3dDevice, &featureLevel,
+			&g_pGameContextD3D11->m_d3dDeviceContext
 		);
 	}
 
@@ -808,13 +752,13 @@ int InitDirectX(HINSTANCE hInstance, BOOL vSync)
 
 	// Next initialize the back buffer of the swap chain and associate it to a render target view
 	ID3D11Texture2D* backBuffer;
-	hr = g_d3dSwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (LPVOID*)&backBuffer);
+	hr = g_pGameContextD3D11->m_d3dSwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (LPVOID*)&backBuffer);
 	if (FAILED(hr))
 	{
 		return -1;
 	}
 
-	hr = g_d3dDevice->CreateRenderTargetView(backBuffer, nullptr, &g_d3dRenderTargetView);
+	hr = g_pGameContextD3D11->m_d3dDevice->CreateRenderTargetView(backBuffer, nullptr, &g_pGameContextD3D11->m_d3dRenderTargetView);
 	if (FAILED(hr))
 	{
 		return -1;
@@ -837,13 +781,13 @@ int InitDirectX(HINSTANCE hInstance, BOOL vSync)
 	depthStencilBufferDesc.SampleDesc.Quality = 0;
 	depthStencilBufferDesc.Usage = D3D11_USAGE_DEFAULT;
 
-	hr = g_d3dDevice->CreateTexture2D(&depthStencilBufferDesc, nullptr, &g_d3dDepthStencilBuffer);
+	hr = g_pGameContextD3D11->m_d3dDevice->CreateTexture2D(&depthStencilBufferDesc, nullptr, &g_pGameContextD3D11->m_d3dDepthStencilBuffer);
 	if (FAILED(hr))
 	{
 		return -1;
 	}
 
-	hr = g_d3dDevice->CreateDepthStencilView(g_d3dDepthStencilBuffer, nullptr, &g_d3dDepthStencilView);
+	hr = g_pGameContextD3D11->m_d3dDevice->CreateDepthStencilView(g_pGameContextD3D11->m_d3dDepthStencilBuffer, nullptr, &g_pGameContextD3D11->m_d3dDepthStencilView);
 	if (FAILED(hr))
 	{
 		return -1;
@@ -858,7 +802,7 @@ int InitDirectX(HINSTANCE hInstance, BOOL vSync)
 	depthStencilStateDesc.DepthFunc = D3D11_COMPARISON_LESS;
 	depthStencilStateDesc.StencilEnable = FALSE;
 
-	hr = g_d3dDevice->CreateDepthStencilState(&depthStencilStateDesc, &g_d3dDepthStencilState);
+	hr = g_pGameContextD3D11->m_d3dDevice->CreateDepthStencilState(&depthStencilStateDesc, &g_pGameContextD3D11->m_d3dDepthStencilState);
 	if (FAILED(hr))
 	{
 		return -1;
@@ -880,19 +824,19 @@ int InitDirectX(HINSTANCE hInstance, BOOL vSync)
 	rasterizerDesc.SlopeScaledDepthBias = 0.0f;
 
 	// create the rasterizer state object
-	hr = g_d3dDevice->CreateRasterizerState(&rasterizerDesc, &g_d3dRasterizerState);
+	hr = g_pGameContextD3D11->m_d3dDevice->CreateRasterizerState(&rasterizerDesc, &g_pGameContextD3D11->m_d3dRasterizerState);
 	if (FAILED(hr))
 	{
 		return -1;
 	}
 
 	// Initialize the viewport to occupy the entire client area
-	g_Viewport.Width = static_cast<float>(clientWidth);
-	g_Viewport.Height = static_cast<float>(clientHeight);
-	g_Viewport.TopLeftX = 0.0f;
-	g_Viewport.TopLeftY = 0.0f;
-	g_Viewport.MinDepth = 0.0f;
-	g_Viewport.MaxDepth = 1.0f;
+	g_pGameContextD3D11->m_Viewport.Width = static_cast<float>(clientWidth);
+	g_pGameContextD3D11->m_Viewport.Height = static_cast<float>(clientHeight);
+	g_pGameContextD3D11->m_Viewport.TopLeftX = 0.0f;
+	g_pGameContextD3D11->m_Viewport.TopLeftY = 0.0f;
+	g_pGameContextD3D11->m_Viewport.MinDepth = 0.0f;
+	g_pGameContextD3D11->m_Viewport.MaxDepth = 1.0f;
 
 	return 0;
 }
