@@ -378,7 +378,7 @@ bool LoadContent()
 			L"../Textures/test.png",
 			&g_pTexture2DResource,
 			&g_pShaderResourceView
-			);
+		);
 		if (FAILED(hr))
 		{
 			return false;
@@ -392,7 +392,7 @@ bool LoadContent()
 		{
 			return false;
 		}
-		
+
 		D3D11_SAMPLER_DESC samplerDesc;
 		ZeroMemory(&samplerDesc, sizeof(samplerDesc));
 		samplerDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
@@ -408,7 +408,7 @@ bool LoadContent()
 		{
 			return false;
 		}
-		
+
 	}
 
 	{// create the constant buffers for the variables defined 
