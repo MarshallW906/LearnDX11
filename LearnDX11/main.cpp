@@ -2,8 +2,7 @@
 
 #include "GameContextD3D11.h"
 
-#include "VertexShader.h"
-#include "PixelShader.h"
+#include "VSPSShader.h"
 
 #include "WICTextureLoader.h"
 
@@ -23,11 +22,7 @@ const BOOL g_EnableVSync = TRUE;
 GameContextD3D11* g_pGameContextD3D11;
 
 // D3D settings
-
-// Vertex buffer data
 ID3D11InputLayout* g_d3dInputLayout = nullptr;
-ID3D11Buffer* g_d3dVertexBuffer = nullptr;
-ID3D11Buffer* g_d3dIndexBuffer = nullptr;
 
 // texture
 ID3D11Buffer* g_d3dVertexTexcoordBuffer = nullptr;
@@ -38,11 +33,7 @@ ID3D11ShaderResourceView* g_pShaderResourceView = nullptr;
 ID3D11SamplerState* g_pSamplerState = nullptr;
 
 // Shader data
-//ID3D11VertexShader* g_d3dVertexShader = nullptr;
-//ID3D11PixelShader* g_d3dPixelShader = nullptr;
-VertexShader* g_VertexShader = nullptr;
-PixelShader* g_PixelShader = nullptr;
-
+VSPSShader* g_VSPSShader = nullptr;
 
 // Shader resources
 enum ConstantBuffer
@@ -275,8 +266,9 @@ void Render()
 
 	// D3D11 Pipeline: VS: vertex shader stage
 	////g_pGameContextD3D11->m_d3dDeviceContext->VSSetShader(g_d3dVertexShader, nullptr, 0);
-	g_VertexShader->BindInputLayoutAndShader(); // IASetInputLayout, VSSetShader
+	//g_VertexShader->BindInputLayoutAndShader(); // IASetInputLayout, VSSetShader
 	g_pGameContextD3D11->m_d3dDeviceContext->VSSetConstantBuffers(0, 3, g_d3dConstantBuffers);
+	g_VSPSShader->BindShaderAndLayout();
 
 	/* test my understanding on the rendering pipeline. succeeded
 	g_WorldMatrix = XMMatrixTranslation(2, 0, 0);
@@ -287,7 +279,7 @@ void Render()
 
 	// D3D11 Pipeline: PS: pixel shader stage
 	////g_pGameContextD3D11->m_d3dDeviceContext->PSSetShader(g_d3dPixelShader, nullptr, 0);
-	g_PixelShader->BindPixelShader(); // PSSetShader
+	//g_PixelShader->BindPixelShader(); // PSSetShader
 	g_pGameContextD3D11->m_d3dDeviceContext->PSSetShaderResources(0, 1, &g_pShaderResourceView);
 	g_pGameContextD3D11->m_d3dDeviceContext->PSSetSamplers(0, 1, &g_pSamplerState);
 
@@ -302,44 +294,6 @@ void Render()
 bool LoadContent()
 {
 	assert(g_pGameContextD3D11->m_d3dDevice);
-
-	{// create and initialize the vertex buffer & index buffer
-		D3D11_BUFFER_DESC vertexBufferDesc;
-		ZeroMemory(&vertexBufferDesc, sizeof(D3D11_BUFFER_DESC));
-
-		vertexBufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-		vertexBufferDesc.ByteWidth = sizeof(VertexPosColor) * _countof(g_Vertices);
-		vertexBufferDesc.CPUAccessFlags = 0;
-		vertexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
-
-		D3D11_SUBRESOURCE_DATA resourceData;
-		ZeroMemory(&resourceData, sizeof(D3D11_SUBRESOURCE_DATA));
-
-		resourceData.pSysMem = g_Vertices;
-
-		HRESULT hr = g_pGameContextD3D11->m_d3dDevice->CreateBuffer(&vertexBufferDesc, &resourceData, &g_d3dVertexBuffer);
-
-		if (FAILED(hr))
-		{
-			return false;
-		}
-
-		// index buffer
-		D3D11_BUFFER_DESC indexBufferDesc;
-		ZeroMemory(&indexBufferDesc, sizeof(D3D11_BUFFER_DESC));
-
-		indexBufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
-		indexBufferDesc.ByteWidth = sizeof(WORD) * _countof(g_Indicies);
-		indexBufferDesc.CPUAccessFlags = 0;
-		indexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
-		resourceData.pSysMem = g_Indicies;
-
-		hr = g_pGameContextD3D11->m_d3dDevice->CreateBuffer(&indexBufferDesc, &resourceData, &g_d3dIndexBuffer);
-		if (FAILED(hr))
-		{
-			return false;
-		}
-	}
 
 	{// create vertex & index buffer for the textured cube
 		D3D11_BUFFER_DESC indexBufferDesc2;
@@ -445,12 +399,19 @@ bool LoadContent()
 			//{ "COLOR", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, offsetof(VertexPosColor,Color), D3D11_INPUT_PER_VERTEX_DATA, 0 }
 			{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, offsetof(VertexPosColor,Color), D3D11_INPUT_PER_VERTEX_DATA, 0 }
 		};
-
+		/*
 		g_VertexShader = new VertexShader(g_pGameContextD3D11);
 		g_VertexShader->LoadFromFileAndCompile(L"../Shaders/SimpleVertexShader.hlsl", "SimpleVertexShader", "latest", vertexLayoutDesc, _countof(vertexLayoutDesc));
 
 		g_PixelShader = new PixelShader(g_pGameContextD3D11);
 		g_PixelShader->LoadFromFileAndCompile(L"../Shaders/SimplePixelShader.hlsl", "SimplePixelShader", "latest");
+		*/
+		g_VSPSShader = new VSPSShader(g_pGameContextD3D11);
+		g_VSPSShader->LoadAndCompileShaderWithInputLayout(
+			L"../Shaders/SimpleVertexShader.hlsl", "SimpleVertexShader",
+			L"../Shaders/SimplePixelShader.hlsl", "SimplePixelShader",
+			vertexLayoutDesc, _countof(vertexLayoutDesc));
+
 	}
 
 
@@ -474,13 +435,12 @@ void UnloadContent()
 	SafeRelease(g_d3dConstantBuffers[ConstantBuffer::CB_Application]);
 	SafeRelease(g_d3dConstantBuffers[ConstantBuffer::CB_Frame]);
 	SafeRelease(g_d3dConstantBuffers[ConstantBuffer::CB_Object]);
-	SafeRelease(g_d3dIndexBuffer);
-	SafeRelease(g_d3dVertexBuffer);
 	SafeRelease(g_d3dInputLayout);
 	//SafeRelease(g_d3dVertexShader);
 	//SafeRelease(g_d3dPixelShader);
-	delete(g_VertexShader);
-	delete(g_PixelShader);
+	//delete(g_VertexShader);
+	//delete(g_PixelShader);
+	delete(g_VSPSShader);
 }
 
 void Cleanup()
