@@ -25,7 +25,7 @@ public:
 
 	void BindVertexAndIndexBuffers();
 
-	UINT GenerateInstances(XMMATRIX* pLocalTransforms, UINT numTransforms);
+	UINT GenerateInstances(XMMATRIX* pLocalTransforms, UINT numTransforms, bool isStatic = false);
 	std::vector<MeshInstance*>& GetAllInstances();
 	// TODO: instances should not managed by a Mesh class
 	// instead we should iterate on all the scene nodes and detemine which objects should be rendered

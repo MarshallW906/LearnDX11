@@ -12,7 +12,7 @@ public:
 	MeshInstance(const MeshInstance&) = delete;
 
 	MeshInstance* GetParentMeshInstance() const;
-	MeshInstance(GameContextD3D11* pGameContext, Mesh* pMesh, XMMATRIX localTransform);
+	MeshInstance(GameContextD3D11* pGameContext, Mesh* pMesh, XMMATRIX localTransform, bool isStatic = false);
 
 	bool IsStatic() const;
 

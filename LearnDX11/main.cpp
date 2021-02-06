@@ -29,9 +29,15 @@ GameContextD3D11* g_pGameContextD3D11;
 // texture
 ID3D11Buffer* g_d3dVertexTexcoordBuffer = nullptr;
 ID3D11Buffer* g_d3dIndexTexcoordBuffer = nullptr;
+
 ID3D11Texture2D* g_pTexture2D = nullptr;
 ID3D11Resource* g_pTexture2DResource = nullptr;
 ID3D11ShaderResourceView* g_pShaderResourceView = nullptr;
+
+ID3D11Texture2D* g_pTexture2D_2 = nullptr;
+ID3D11Resource* g_pTexture2DResource_2 = nullptr;
+ID3D11ShaderResourceView* g_pShaderResourceView_2 = nullptr;
+
 ID3D11SamplerState* g_pSamplerState = nullptr;
 
 ID3D11Buffer* g_CylinderVertexTexcoordBuffer = nullptr;
@@ -42,6 +48,9 @@ VSPSShader* g_VSPSShader = nullptr;
 
 Mesh* g_pCubeMesh;
 Mesh* g_pCylinderMesh;
+
+UINT g_carBodyIndex = 0;
+UINT g_carWheelsStartIndex = 0; // 0: front-left, 1: front-right, 2: back-left, 3: back-right
 
 XMMATRIX g_TestInitTransforms[] = {
 	XMMatrixTranslation(1.0f, 1.0f, 1.0f),
@@ -141,11 +150,8 @@ void GenerateCylinderVerticesAndTexcoords(float radius, float height, unsigned i
 std::vector<VertexPosTexcoord> g_CylinderVerticesTexcoord;
 std::vector<WORD> g_CylinderIndices;
 
-
-
 // Forward declarations
 LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
-
 
 bool LoadAndGenerateBuffers();
 bool ConstructWorld();
@@ -162,55 +168,19 @@ void Update(float deltaTime)
 	static float angle = 0.0f;
 	angle += 4.0f * deltaTime;
 
-	static float angleRadians = XMConvertToRadians(2.0f / 30 * 20.0f);
+	float angleRadians = XMConvertToRadians(angle);
 
 	// view matrix
-	XMVECTOR eyePosition = XMVectorSet(0, 0, -20, 1);
+	XMVECTOR eyePosition = XMVectorSet(0, 20, -40, 1);
 	XMVECTOR focusPoint = XMVectorSet(0, 0, 0, 1);
 	XMVECTOR upDirection = XMVectorSet(0, 1, 0, 0);
 	g_ViewMatrix = XMMatrixLookAtLH(eyePosition, focusPoint, upDirection);
 
 	// world(model) matrix
-	/*
-	XMVECTOR rotationAxisX = XMVectorSet(1, 0, 0, 0);
-	XMVECTOR rotationAxisY = XMVectorSet(0, 1, 0, 0);
-	XMVECTOR rotationAxisZ = XMVectorSet(0, 0, 1, 0);
-	*/
-	std::vector<MeshInstance*> cylinderInstances = g_pCylinderMesh->GetAllInstances();
-	/*
-	cylinderInstances[0]->ApplyTransform(
-		//XMMatrixRotationX(angleRadians)
-		XMMatrixTranslation(sinf(XMConvertToRadians(angle * 10.0f)), 0, 0)
-	);*/
-	cylinderInstances[0]->UpdateLocalTransform(
-		XMMatrixTranslation(3 * sinf(XMConvertToRadians(angle * 10.0f)), 0, 0)
-	);
-	cylinderInstances[1]->ApplyTransform(
-		XMMatrixRotationY(angleRadians)
-	);
-	
-	cylinderInstances[2]->ApplyTransform(
-		XMMatrixRotationZ(angleRadians)
-	);
-}
 
-// Clear the color and depth buffers
-void Clear(const FLOAT clearColor[4], FLOAT clearDepth, UINT8 clearStencil)
-{
-	g_pGameContextD3D11->m_d3dDeviceContext->ClearRenderTargetView(g_pGameContextD3D11->m_d3dRenderTargetView, clearColor);
-	g_pGameContextD3D11->m_d3dDeviceContext->ClearDepthStencilView(g_pGameContextD3D11->m_d3dDepthStencilView, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, clearDepth, clearStencil);
-}
+	std::vector<MeshInstance*>& cubeInstances = g_pCubeMesh->GetAllInstances();
+	MeshInstance* carBodyInstance = cubeInstances[g_carBodyIndex];
 
-void Present(bool vSync)
-{
-	if (vSync)
-	{
-		g_pGameContextD3D11->m_d3dSwapChain->Present(1, 0);
-	}
-	else
-	{
-		g_pGameContextD3D11->m_d3dSwapChain->Present(0, 0);
-	}
 }
 
 void Render()
@@ -222,33 +192,14 @@ void Render()
 	// we need to clear both the view of render target(s) and stencil buffer.
 	Clear(Colors::CornflowerBlue, 1.0f, 0);
 
-
 	// Refresh constant buffer resources with the new data (which is the data updated from Update())
 	g_pGameContextD3D11->m_d3dDeviceContext->UpdateSubresource(g_d3dGeneralConstantBuffers[GeneralConstantBuffer::CB_Frame], 0, nullptr, &g_ViewMatrix, 0, 0);
 
-
-	/* RS: rasterizer stage
-	* D3D11 Pipeline: RS: rasterizer stage
-	* interpolating various vertex attributes output from the vertex shader
-	* invoke pixel shader program for each screen pixel which is affected by rendered geometry
-	*/
-	// I haven't found the doc telling the order of RS stage, but here is a warning I got when I put RS stage after a Draw(),
-	//    The warning disappeared when I put RS stage before a Draw() so I guess that's where it should be (or at least, roughly)
-	/*
-	* D3D11 WARNING: ID3D11DeviceContext::DrawIndexed: There are no viewports currently bound.
-	* If any rasterization to RenderTarget(s) and/or DepthStencil is performed, results will be undefined.
-	* [ EXECUTION WARNING #384: DEVICE_DRAW_VIEWPORT_NOT_SET]
-	*/
+	// D3D11 Pipeline: RS: rasterizer stage
 	g_pGameContextD3D11->m_d3dDeviceContext->RSSetState(g_pGameContextD3D11->m_d3dRasterizerState);
 	g_pGameContextD3D11->m_d3dDeviceContext->RSSetViewports(1, &g_pGameContextD3D11->m_Viewport);
 
-
 	// D3D11 Pipeline: OM: output merger stage
-	// "merges the output from the pixel shader onto the color and depth buffers"
-	// this is the stage where pixels are blended after the shaders are finished.
-	//
-	// OM stage does NOT have to follow a "typical" order when setting up the rendering pipeline
-	// Because:
 	// we may have multiple stencils and targets if we have addtional vertex and pixel shaders
 	//    that generate textures like shadow maps, height maps, or other sampling techniques
 	// in this case, as the code is, we will need to choose appropriate rendering target(s) set
@@ -256,6 +207,7 @@ void Render()
 	g_pGameContextD3D11->m_d3dDeviceContext->OMSetRenderTargets(1, &g_pGameContextD3D11->m_d3dRenderTargetView, g_pGameContextD3D11->m_d3dDepthStencilView);
 	g_pGameContextD3D11->m_d3dDeviceContext->OMSetDepthStencilState(g_pGameContextD3D11->m_d3dDepthStencilState, 1);
 
+	// ====================================================
 	// D3D11 Pipeline: IA: input assembler stage
 	// D3D11 Pipeline: VS: vertex shader stage
 	g_pGameContextD3D11->m_d3dDeviceContext->VSSetConstantBuffers(0, GeneralConstantBuffer::NumGeneralConstantBuffers, g_d3dGeneralConstantBuffers);
@@ -263,15 +215,13 @@ void Render()
 	g_VSPSShader->BindShaderAndLayout();
 
 	// D3D11 Pipeline: PS: pixel shader stage
-	g_pGameContextD3D11->m_d3dDeviceContext->PSSetShaderResources(0, 1, &g_pShaderResourceView);
 	g_pGameContextD3D11->m_d3dDeviceContext->PSSetSamplers(0, 1, &g_pSamplerState);
 
+	g_pGameContextD3D11->m_d3dDeviceContext->PSSetShaderResources(0, 1, &g_pShaderResourceView);
 	g_pCubeMesh->DrawAllInstances();
-	g_pCylinderMesh->DrawAllInstances();
 
-	// finally: we draw the cube
-	//g_pGameContextD3D11->m_d3dDeviceContext->DrawIndexed(_countof(g_Indicies), 0, 0);
-	//g_pGameContextD3D11->m_d3dDeviceContext->DrawIndexedInstanced(_countof(g_Indicies), 1, 0, 0, 0);
+	g_pGameContextD3D11->m_d3dDeviceContext->PSSetShaderResources(0, 1, &g_pShaderResourceView_2);
+	g_pCylinderMesh->DrawAllInstances();
 
 
 	Present(g_EnableVSync);
@@ -315,7 +265,7 @@ bool LoadAndGenerateBuffers()
 
 	// create vertex & index buffer for cylinder
 	{
-		GenerateCylinderVerticesAndTexcoords(1, 1, 16U);
+		GenerateCylinderVerticesAndTexcoords(1, 4, 16U);
 
 		D3D11_BUFFER_DESC vertexBufferDesc;
 		ZeroMemory(&vertexBufferDesc, sizeof(vertexBufferDesc));
@@ -365,6 +315,27 @@ bool LoadAndGenerateBuffers()
 		// g_pTexture2DResource->GetType(D3D11_RESOURCE_DIMENSION*)
 		// to get the type during runtime if we do not know what exactly the type is
 		hr = g_pTexture2DResource->QueryInterface(IID_ID3D11Texture2D, (void**)&g_pTexture2D);
+		if (FAILED(hr))
+		{
+			return false;
+		}
+
+		hr = CreateWICTextureFromFile(
+			g_pGameContextD3D11->m_d3dDevice,
+			g_pGameContextD3D11->m_d3dDeviceContext,
+			L"../Textures/crate2_h2.png",
+			&g_pTexture2DResource_2,
+			&g_pShaderResourceView_2
+		);
+		if (FAILED(hr))
+		{
+			return false;
+		}
+
+		// also here we can use 
+		// g_pTexture2DResource->GetType(D3D11_RESOURCE_DIMENSION*)
+		// to get the type during runtime if we do not know what exactly the type is
+		hr = g_pTexture2DResource_2->QueryInterface(IID_ID3D11Texture2D, (void**)&g_pTexture2D_2);
 		if (FAILED(hr))
 		{
 			return false;
@@ -452,33 +423,53 @@ bool LoadAndGenerateBuffers()
 
 bool ConstructWorld()
 {
+	// create Cube & Cylinder Mesh
 	g_pCubeMesh = new Mesh(g_pGameContextD3D11, &g_d3dVertexTexcoordBuffer, 1, &VertexPosTexcoordStride, &offset,
 		g_d3dIndexTexcoordBuffer, _countof(g_CubeIndicesTexcoord), DXGI_FORMAT_R16_UINT, offset);
-
-	XMMATRIX ts1[] = {
-		XMMatrixTranslation(-1.0f, -1.0f, -1.0f),
-		XMMatrixTranslation(-2.0f, -2.0f, -2.0f),
-		XMMatrixTranslation(-3.0f, -3.0f, -3.0f),
-
-	};
-	g_pCubeMesh->GenerateInstances(ts1, _countof(ts1));
 
 	g_pCylinderMesh = new Mesh(g_pGameContextD3D11,
 		&g_CylinderVertexTexcoordBuffer, 1, &VertexPosTexcoordStride, &offset,
 		g_CylinderIndexBuffer, g_CylinderIndices.size(), DXGI_FORMAT_R16_UINT, offset);
 
-	XMMATRIX ts2[] = {
-	XMMatrixRotationRollPitchYaw(60, 0, 0) * XMMatrixTranslation(-1.0f, -1.0f, -1.0f),
-	XMMatrixRotationRollPitchYaw(0, 135, 0) * XMMatrixTranslation(-3.0f, -3.0f, -3.0f),
-	XMMatrixRotationRollPitchYaw(0, 0, 60) * XMMatrixTranslation(-5.0f, -5.0f, -5.0f),
-	};
+	std::vector<MeshInstance*>& refCubeInstances = g_pCubeMesh->GetAllInstances();
+	std::vector<MeshInstance*>& refCylinderInstances = g_pCylinderMesh->GetAllInstances();
+
+	// test Transform hierarchy. succeeded
+	/*
 	UINT cIndex = g_pCylinderMesh->GenerateInstances(g_TestInitTransforms, _countof(g_TestInitTransforms));
 	std::vector<MeshInstance*>& cylinderInstances = g_pCylinderMesh->GetAllInstances();
 	cylinderInstances[cIndex + 1]->SetParentMeshInstance(cylinderInstances[cIndex]);
-	cylinderInstances[cIndex + 2]->SetParentMeshInstance(cylinderInstances[cIndex + 1]);
+	cylinderInstances[cIndex + 2]->SetParentMeshInstance(cylinderInstances[cIndex + 1]);*/
 
-	// NEXT STEP 1: generate some (TODO: static) cube/cylinders as ornaments, put them in the scene
-	// NEXT STEP 2: construct a "car" (4 cylinders under 1 cube), expose references of the "car"'s root, and its two front wheels
+	// generate some ornaments
+	XMMATRIX cubeOrnaments[] = {
+		XMMatrixScaling(50, 0.1, 50) * XMMatrixTranslation(0, -1, 0), // cubeplane
+		XMMatrixScaling(2, 2, 2) * XMMatrixTranslation(-14.5, 0, 11.5),
+		XMMatrixScaling(2, 2, 2) * XMMatrixTranslation(14.5, 0, 11.5),
+		XMMatrixScaling(2, 2, 2) * XMMatrixTranslation(-14.5, 0, -11.5),
+		XMMatrixScaling(2, 2, 2) * XMMatrixTranslation(14.5, 0, -11.5),
+	};
+	g_pCubeMesh->GenerateInstances(cubeOrnaments, _countof(cubeOrnaments), true);
+
+	// 2: construct a car by one cube body & 4 cylinder wheels
+	XMMATRIX CarBody = XMMatrixScaling(2, 0.5, 3);
+	g_carBodyIndex = g_pCubeMesh->GenerateInstances(&CarBody, 1, false);
+
+	constexpr float radians90Degree = XMConvertToRadians(90);
+	XMMATRIX CylinderCarWheels[] = {
+		XMMatrixScaling(.6, 0.2, .6) * XMMatrixRotationRollPitchYaw(0, 0, radians90Degree) * XMMatrixTranslation(-1.8, -1.2, 2.2), // front left
+		XMMatrixScaling(.6, 0.2, .6) * XMMatrixRotationRollPitchYaw(0, 0, radians90Degree) * XMMatrixTranslation(1.8, -1.2, 2.2), // front right
+		XMMatrixScaling(.6, 0.2, .6) * XMMatrixRotationRollPitchYaw(0, 0, radians90Degree) * XMMatrixTranslation(-1.8, -1.2, -2.2), // back left
+		XMMatrixScaling(.6, 0.2, .6) * XMMatrixRotationRollPitchYaw(0, 0, radians90Degree) * XMMatrixTranslation(1.8, -1.2, -2.2), // back right
+	};
+	g_carWheelsStartIndex = g_pCylinderMesh->GenerateInstances(CylinderCarWheels, _countof(CylinderCarWheels), false);
+	for (int i = g_carWheelsStartIndex; i < 4; i++)
+	{
+		refCylinderInstances[g_carWheelsStartIndex + i]->SetParentMeshInstance(refCubeInstances[g_carBodyIndex]);
+	}
+
+	// [OK] NEXT STEP 1: generate some (TODO: static) cube/cylinders as ornaments, put them in the scene
+	// [OK] NEXT STEP 2: construct a "car" (4 cylinders under 1 cube), expose references of the "car"'s root, and its two front wheels
 	// NEXT STEP 3: add keyboard detection, WASD move the car
 	// NEXT STEP 3.1: when the car is moving, apply rotation on wheels accordingly (all wheels: forward/backward; front wheels: rotate left/right)
 	// NEXT STEP 4: skybox. (cubemap)
@@ -902,6 +893,26 @@ int WINAPI wWinMain(
 
 	return returnCode;
 }
+
+// Clear the color and depth buffers
+void Clear(const FLOAT clearColor[4], FLOAT clearDepth, UINT8 clearStencil)
+{
+	g_pGameContextD3D11->m_d3dDeviceContext->ClearRenderTargetView(g_pGameContextD3D11->m_d3dRenderTargetView, clearColor);
+	g_pGameContextD3D11->m_d3dDeviceContext->ClearDepthStencilView(g_pGameContextD3D11->m_d3dDepthStencilView, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, clearDepth, clearStencil);
+}
+
+void Present(bool vSync)
+{
+	if (vSync)
+	{
+		g_pGameContextD3D11->m_d3dSwapChain->Present(1, 0);
+	}
+	else
+	{
+		g_pGameContextD3D11->m_d3dSwapChain->Present(0, 0);
+	}
+}
+
 
 void GenerateCylinderVerticesAndTexcoords(float radius, float height, unsigned int numPolygonSides = 16)
 {

@@ -23,13 +23,13 @@ Mesh::~Mesh()
 	delete(m_pAllInstanceTransforms);
 }
 
-UINT Mesh::GenerateInstances(XMMATRIX* pLocalTransforms, UINT numTransforms)
+UINT Mesh::GenerateInstances(XMMATRIX* pLocalTransforms, UINT numTransforms, bool isStatic)
 {
 	//MeshInstance *t = new MeshInstance(m_pGameContext);
 	UINT startIndex = m_MeshInstances.size(); // previous size
 	for (int i = 0; i < numTransforms; i++)
 	{
-		MeshInstance* t = new MeshInstance(m_pGameContext, this, pLocalTransforms[i]);
+		MeshInstance* t = new MeshInstance(m_pGameContext, this, pLocalTransforms[i], isStatic);
 		m_MeshInstances.push_back(t);
 	}
 	return startIndex;

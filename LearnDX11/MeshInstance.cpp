@@ -6,10 +6,10 @@ MeshInstance* MeshInstance::GetParentMeshInstance() const
 	return m_pParentMeshInstance;
 }
 
-MeshInstance::MeshInstance(GameContextD3D11* pGameContext, Mesh *pMesh, XMMATRIX localTransform)
+MeshInstance::MeshInstance(GameContextD3D11* pGameContext, Mesh *pMesh, XMMATRIX localTransform, bool isStatic)
 	: m_pGameContext(pGameContext)
 	, m_pMesh(pMesh)
-	, m_isStatic(false)
+	, m_isStatic(isStatic)
 	, m_pParentMeshInstance(nullptr)
 	, m_localTransform(localTransform)
 {
