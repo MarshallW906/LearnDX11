@@ -455,7 +455,7 @@ bool ConstructWorld()
 	g_pCubeMesh = new Mesh(g_pGameContextD3D11, &g_d3dVertexTexcoordBuffer, 1, &VertexPosTexcoordStride, &offset,
 		g_d3dIndexTexcoordBuffer, _countof(g_CubeIndicesTexcoord), DXGI_FORMAT_R16_UINT, offset);
 
-	XMMATRIX ts1[] = {// next step: debug here, its not correct
+	XMMATRIX ts1[] = {
 		XMMatrixTranslation(-1.0f, -1.0f, -1.0f),
 		XMMatrixTranslation(-2.0f, -2.0f, -2.0f),
 		XMMatrixTranslation(-3.0f, -3.0f, -3.0f),
@@ -467,7 +467,7 @@ bool ConstructWorld()
 		&g_CylinderVertexTexcoordBuffer, 1, &VertexPosTexcoordStride, &offset,
 		g_CylinderIndexBuffer, g_CylinderIndices.size(), DXGI_FORMAT_R16_UINT, offset);
 
-	XMMATRIX ts2[] = {// next step: debug here, its not correct
+	XMMATRIX ts2[] = {
 	XMMatrixRotationRollPitchYaw(60, 0, 0) * XMMatrixTranslation(-1.0f, -1.0f, -1.0f),
 	XMMatrixRotationRollPitchYaw(0, 135, 0) * XMMatrixTranslation(-3.0f, -3.0f, -3.0f),
 	XMMatrixRotationRollPitchYaw(0, 0, 60) * XMMatrixTranslation(-5.0f, -5.0f, -5.0f),
@@ -477,7 +477,18 @@ bool ConstructWorld()
 	cylinderInstances[cIndex + 1]->SetParentMeshInstance(cylinderInstances[cIndex]);
 	cylinderInstances[cIndex + 2]->SetParentMeshInstance(cylinderInstances[cIndex + 1]);
 
-
+	// NEXT STEP 1: generate some (TODO: static) cube/cylinders as ornaments, put them in the scene
+	// NEXT STEP 2: construct a "car" (4 cylinders under 1 cube), expose references of the "car"'s root, and its two front wheels
+	// NEXT STEP 3: add keyboard detection, WASD move the car
+	// NEXT STEP 3.1: when the car is moving, apply rotation on wheels accordingly (all wheels: forward/backward; front wheels: rotate left/right)
+	// NEXT STEP 4: skybox. (cubemap)
+	// NEXT STEP 5.1: camera mode: 1st person view
+	// NEXT STEP 5.2: camera mode: 3rd person view
+	// NEXT STEP 6: camera mode: switch between 1st & 3rd
+	// NEXT STEP 7: camera: mouse movement under 3rd person view: RotateAround
+	// NEXT STEP 8: camera: mouse wheel under 3rd person view: Zoom In/Out
+	// NEXT STEP 9: shader: light
+	// NEXT STEP 10: Shadow (I dont know how to do that yet)
 	return true;
 }
 
