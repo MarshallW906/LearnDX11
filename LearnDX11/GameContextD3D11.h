@@ -27,6 +27,12 @@ struct GameContextD3D11
 	ID3D11RasterizerState* m_d3dRasterizerState = nullptr;
 	D3D11_VIEWPORT m_Viewport = { 0 };
 
+	ID3D11Buffer* m_constantBufferAllMeshPositions = nullptr;
+
+	ID3D11Device* const getDevice() const;
+	ID3D11DeviceContext* const getDeviceContext() const;
+	ID3D11Buffer* const getConstantBufferAllPos() const;
+
 	void Release();
 };
 

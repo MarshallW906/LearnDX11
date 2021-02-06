@@ -3,8 +3,12 @@
 #include "GameContextD3D11.h"
 
 #include "VSPSShader.h"
+#include "Mesh.h"
+#include "MeshInstance.h"
 
 #include "WICTextureLoader.h"
+
+const UINT MAX_NUM_MESH_INSTANCE = 1000;
 
 
 using namespace DirectX;
@@ -18,11 +22,9 @@ HWND g_WindowHandle = 0;
 
 const BOOL g_EnableVSync = TRUE;
 
-
 GameContextD3D11* g_pGameContextD3D11;
 
 // D3D settings
-ID3D11InputLayout* g_d3dInputLayout = nullptr;
 
 // texture
 ID3D11Buffer* g_d3dVertexTexcoordBuffer = nullptr;
@@ -32,30 +34,34 @@ ID3D11Resource* g_pTexture2DResource = nullptr;
 ID3D11ShaderResourceView* g_pShaderResourceView = nullptr;
 ID3D11SamplerState* g_pSamplerState = nullptr;
 
+ID3D11Buffer* g_CylinderVertexTexcoordBuffer = nullptr;
+ID3D11Buffer* g_CylinderIndexBuffer = nullptr;
+
 // Shader data
 VSPSShader* g_VSPSShader = nullptr;
 
+Mesh* g_pCubeMesh;
+Mesh* g_pCylinderMesh;
+
+XMMATRIX g_TestInitTransforms[] = {
+	XMMatrixTranslation(1.0f, 1.0f, 1.0f),
+	XMMatrixTranslation(3.0f, 3.0f, 3.0f),
+	XMMatrixTranslation(5.0f, 5.0f, 5.0f),
+};
+
 // Shader resources
-enum ConstantBuffer
+enum GeneralConstantBuffer
 {
 	CB_Application,
 	CB_Frame,
-	CB_Object,
-	NumConstantBuffers,
+	NumGeneralConstantBuffers,
 };
 
-ID3D11Buffer* g_d3dConstantBuffers[ConstantBuffer::NumConstantBuffers];
+ID3D11Buffer* g_d3dGeneralConstantBuffers[GeneralConstantBuffer::NumGeneralConstantBuffers];
 
 
-XMMATRIX g_WorldMatrix;
 XMMATRIX g_ViewMatrix;
 XMMATRIX g_ProjectionMatrix;
-
-struct VertexPosColor
-{
-	XMFLOAT3 Position;
-	XMFLOAT3 Color;
-};
 
 struct VertexPosTexcoord
 {
@@ -63,30 +69,10 @@ struct VertexPosTexcoord
 	XMFLOAT2 TexCoord;
 };
 
-// the vertices and indices of a cube
-VertexPosColor g_Vertices[8] =
-{
-	{ XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, 0.0f) }, // 0
-	{ XMFLOAT3(-1.0f,  1.0f, -1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) }, // 1
-	{ XMFLOAT3(1.0f,  1.0f, -1.0f), XMFLOAT3(1.0f, 1.0f, 0.0f) }, // 2
-	{ XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) }, // 3
-	{ XMFLOAT3(-1.0f, -1.0f,  1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) }, // 4
-	{ XMFLOAT3(-1.0f,  1.0f,  1.0f), XMFLOAT3(0.0f, 1.0f, 1.0f) }, // 5
-	{ XMFLOAT3(1.0f,  1.0f,  1.0f), XMFLOAT3(1.0f, 1.0f, 1.0f) }, // 6
-	{ XMFLOAT3(1.0f, -1.0f,  1.0f), XMFLOAT3(1.0f, 0.0f, 1.0f) }  // 7
-};
+UINT VertexPosTexcoordStride = sizeof(VertexPosTexcoord);
+UINT offset = 0;
 
-WORD g_Indicies[36] =
-{
-	0, 1, 2, 0, 2, 3,
-	4, 6, 5, 4, 7, 6,
-	4, 5, 1, 4, 1, 0,
-	3, 2, 6, 3, 6, 7,
-	1, 5, 6, 1, 6, 2,
-	4, 0, 3, 4, 3, 7
-};
-
-VertexPosTexcoord g_VerticesTexcoord[] =
+VertexPosTexcoord g_CubeVerticesTexcoord[] =
 {
 	// Front Face
 	{XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT2(0.0f, 1.0f)},
@@ -125,7 +111,7 @@ VertexPosTexcoord g_VerticesTexcoord[] =
 	{XMFLOAT3(1.0f, -1.0f,  1.0f), XMFLOAT2(1.0f, 1.0f)},
 };
 
-WORD g_IndicesTexcoord[] = {
+WORD g_CubeIndicesTexcoord[] = {
 	// Front Face
 	0,  1,  2,
 	0,  2,  3,
@@ -151,12 +137,18 @@ WORD g_IndicesTexcoord[] = {
 	20, 22, 23
 };
 
+void GenerateCylinderVerticesAndTexcoords(float radius, float height, unsigned int numPolygonSides);
+std::vector<VertexPosTexcoord> g_CylinderVerticesTexcoord;
+std::vector<WORD> g_CylinderIndices;
+
+
 
 // Forward declarations
 LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
 
 
-bool LoadContent();
+bool LoadAndGenerateBuffers();
+bool ConstructWorld();
 void UnloadContent();
 
 void Update(float deltaTime);
@@ -170,21 +162,31 @@ void Update(float deltaTime)
 	static float angle = 0.0f;
 	angle += 4.0f * deltaTime;
 
+	static float angleRadians = XMConvertToRadians(2.0f / 30 * 20.0f);
+
 	// view matrix
-	XMVECTOR eyePosition = XMVectorSet(0, 0, -10, 1);
+	XMVECTOR eyePosition = XMVectorSet(0, 0, -20, 1);
 	XMVECTOR focusPoint = XMVectorSet(0, 0, 0, 1);
 	XMVECTOR upDirection = XMVectorSet(0, 1, 0, 0);
 	g_ViewMatrix = XMMatrixLookAtLH(eyePosition, focusPoint, upDirection);
 
 	// world(model) matrix
-	XMVECTOR rotationAxis = XMVectorSet(1, 0, 1, 0);
-
-	//g_WorldMatrix = XMMatrixRotationAxis(rotationAxis, XMConvertToRadians(angle));
-
-	// all XMMatrix's matrices are row-major
-	// which means the first transformation operation lies on the first factor of matrix multiplication
-	g_WorldMatrix = XMMatrixScaling(1, (1.2f + cosf(angle)), 1) * XMMatrixRotationAxis(rotationAxis, XMConvertToRadians(angle * 20.0f)) * XMMatrixTranslation(sinf(angle), 0, 0);
-
+	/*
+	XMVECTOR rotationAxisX = XMVectorSet(1, 0, 0, 0);
+	XMVECTOR rotationAxisY = XMVectorSet(0, 1, 0, 0);
+	XMVECTOR rotationAxisZ = XMVectorSet(0, 0, 1, 0);
+	*/
+	std::vector<MeshInstance*> cylinderInstances = g_pCylinderMesh->GetAllInstances();
+	
+	cylinderInstances[0]->UpdateLocalTransform(
+		XMMatrixRotationX(angleRadians) * cylinderInstances[0]->GetLocalTransform()
+	);
+	cylinderInstances[1]->UpdateLocalTransform(
+		XMMatrixRotationY(angleRadians) * cylinderInstances[1]->GetLocalTransform()
+	);
+	cylinderInstances[2]->UpdateLocalTransform(
+		XMMatrixRotationZ(angleRadians) * cylinderInstances[2]->GetLocalTransform()
+	);
 }
 
 // Clear the color and depth buffers
@@ -217,8 +219,7 @@ void Render()
 
 
 	// Refresh constant buffer resources with the new data (which is the data updated from Update())
-	g_pGameContextD3D11->m_d3dDeviceContext->UpdateSubresource(g_d3dConstantBuffers[ConstantBuffer::CB_Frame], 0, nullptr, &g_ViewMatrix, 0, 0);
-	g_pGameContextD3D11->m_d3dDeviceContext->UpdateSubresource(g_d3dConstantBuffers[ConstantBuffer::CB_Object], 0, nullptr, &g_WorldMatrix, 0, 0);
+	g_pGameContextD3D11->m_d3dDeviceContext->UpdateSubresource(g_d3dGeneralConstantBuffers[GeneralConstantBuffer::CB_Frame], 0, nullptr, &g_ViewMatrix, 0, 0);
 
 
 	/* RS: rasterizer stage
@@ -251,60 +252,41 @@ void Render()
 	g_pGameContextD3D11->m_d3dDeviceContext->OMSetDepthStencilState(g_pGameContextD3D11->m_d3dDepthStencilState, 1);
 
 	// D3D11 Pipeline: IA: input assembler stage
-	//const UINT vertexStride = sizeof(VertexPosColor);
-	const UINT vertexStride = sizeof(VertexPosTexcoord);
-	const UINT offset = 0;
-
-	/*
-	g_pGameContextD3D11->m_d3dDeviceContext->IASetVertexBuffers(0, 1, &g_d3dVertexBuffer, &vertexStride, &offset);
-	g_pGameContextD3D11->m_d3dDeviceContext->IASetIndexBuffer(g_d3dIndexBuffer, DXGI_FORMAT_R16_UINT, 0);
-	*/
-	g_pGameContextD3D11->m_d3dDeviceContext->IASetVertexBuffers(0, 1, &g_d3dVertexTexcoordBuffer, &vertexStride, &offset);
-	g_pGameContextD3D11->m_d3dDeviceContext->IASetIndexBuffer(g_d3dIndexTexcoordBuffer, DXGI_FORMAT_R16_UINT, 0);
-	////g_pGameContextD3D11->m_d3dDeviceContext->IASetInputLayout(g_d3dInputLayout);
-	g_pGameContextD3D11->m_d3dDeviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
 	// D3D11 Pipeline: VS: vertex shader stage
-	////g_pGameContextD3D11->m_d3dDeviceContext->VSSetShader(g_d3dVertexShader, nullptr, 0);
-	//g_VertexShader->BindInputLayoutAndShader(); // IASetInputLayout, VSSetShader
-	g_pGameContextD3D11->m_d3dDeviceContext->VSSetConstantBuffers(0, 3, g_d3dConstantBuffers);
+	g_pGameContextD3D11->m_d3dDeviceContext->VSSetConstantBuffers(0, GeneralConstantBuffer::NumGeneralConstantBuffers, g_d3dGeneralConstantBuffers);
+	g_pGameContextD3D11->m_d3dDeviceContext->VSSetConstantBuffers(GeneralConstantBuffer::NumGeneralConstantBuffers, 1, &g_pGameContextD3D11->m_constantBufferAllMeshPositions);
 	g_VSPSShader->BindShaderAndLayout();
 
-	/* test my understanding on the rendering pipeline. succeeded
-	g_WorldMatrix = XMMatrixTranslation(2, 0, 0);
-	g_pGameContextD3D11->m_d3dDeviceContext->UpdateSubresource(g_d3dConstantBuffers[ConstantBuffer::CB_Object], 0, nullptr, &g_WorldMatrix, 0, 0);
-	g_pGameContextD3D11->m_d3dDeviceContext->VSSetConstantBuffers(0, 3, g_d3dConstantBuffers);
-	g_pGameContextD3D11->m_d3dDeviceContext->DrawIndexed(_countof(g_Indicies), 0, 0);
-	*/
-
 	// D3D11 Pipeline: PS: pixel shader stage
-	////g_pGameContextD3D11->m_d3dDeviceContext->PSSetShader(g_d3dPixelShader, nullptr, 0);
-	//g_PixelShader->BindPixelShader(); // PSSetShader
 	g_pGameContextD3D11->m_d3dDeviceContext->PSSetShaderResources(0, 1, &g_pShaderResourceView);
 	g_pGameContextD3D11->m_d3dDeviceContext->PSSetSamplers(0, 1, &g_pSamplerState);
 
+	g_pCubeMesh->DrawAllInstances();
+	g_pCylinderMesh->DrawAllInstances();
+
 	// finally: we draw the cube
 	//g_pGameContextD3D11->m_d3dDeviceContext->DrawIndexed(_countof(g_Indicies), 0, 0);
-	g_pGameContextD3D11->m_d3dDeviceContext->DrawIndexedInstanced(_countof(g_Indicies), 1, 0, 0, 0);
+	//g_pGameContextD3D11->m_d3dDeviceContext->DrawIndexedInstanced(_countof(g_Indicies), 1, 0, 0, 0);
 
 
 	Present(g_EnableVSync);
 }
 
-bool LoadContent()
+bool LoadAndGenerateBuffers()
 {
 	assert(g_pGameContextD3D11->m_d3dDevice);
 
-	{// create vertex & index buffer for the textured cube
+	// create vertex & index buffer for the textured cube
+	{
 		D3D11_BUFFER_DESC indexBufferDesc2;
 		ZeroMemory(&indexBufferDesc2, sizeof(indexBufferDesc2));
 		indexBufferDesc2.Usage = D3D11_USAGE_DEFAULT;
-		indexBufferDesc2.ByteWidth = sizeof(WORD) * _countof(g_IndicesTexcoord);
+		indexBufferDesc2.ByteWidth = sizeof(WORD) * _countof(g_CubeIndicesTexcoord);
 		indexBufferDesc2.BindFlags = D3D11_BIND_INDEX_BUFFER;
 		indexBufferDesc2.CPUAccessFlags = 0;
 		indexBufferDesc2.MiscFlags = 0;
 		D3D11_SUBRESOURCE_DATA resourceData2;
-		resourceData2.pSysMem = g_IndicesTexcoord;
+		resourceData2.pSysMem = g_CubeIndicesTexcoord;
 		HRESULT hr = g_pGameContextD3D11->m_d3dDevice->CreateBuffer(&indexBufferDesc2, &resourceData2, &g_d3dIndexTexcoordBuffer);
 		if (FAILED(hr))
 		{
@@ -314,22 +296,58 @@ bool LoadContent()
 		D3D11_BUFFER_DESC vertexBufferDesc2;
 		ZeroMemory(&vertexBufferDesc2, sizeof(vertexBufferDesc2));
 		vertexBufferDesc2.Usage = D3D11_USAGE_DEFAULT;
-		vertexBufferDesc2.ByteWidth = sizeof(VertexPosTexcoord) * _countof(g_VerticesTexcoord);
+		vertexBufferDesc2.ByteWidth = sizeof(VertexPosTexcoord) * _countof(g_CubeVerticesTexcoord);
 		vertexBufferDesc2.CPUAccessFlags = 0;
 		vertexBufferDesc2.BindFlags = D3D11_BIND_VERTEX_BUFFER;
 		vertexBufferDesc2.MiscFlags = 0;
-		resourceData2.pSysMem = g_VerticesTexcoord;
+		resourceData2.pSysMem = g_CubeVerticesTexcoord;
 		hr = g_pGameContextD3D11->m_d3dDevice->CreateBuffer(&vertexBufferDesc2, &resourceData2, &g_d3dVertexTexcoordBuffer);
 		if (FAILED(hr))
 		{
 			return false;
 		}
 	}
-	{// load texture from a file
+
+	// create vertex & index buffer for cylinder
+	{
+		GenerateCylinderVerticesAndTexcoords(1, 1, 16U);
+
+		D3D11_BUFFER_DESC vertexBufferDesc;
+		ZeroMemory(&vertexBufferDesc, sizeof(vertexBufferDesc));
+		vertexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
+		vertexBufferDesc.ByteWidth = sizeof(VertexPosTexcoord) * g_CylinderVerticesTexcoord.size();
+		vertexBufferDesc.CPUAccessFlags = 0;
+		vertexBufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+		vertexBufferDesc.MiscFlags = 0;
+		D3D11_SUBRESOURCE_DATA resourceData;
+		resourceData.pSysMem = &g_CylinderVerticesTexcoord[0];
+		HRESULT hr = g_pGameContextD3D11->getDevice()->CreateBuffer(&vertexBufferDesc, &resourceData, &g_CylinderVertexTexcoordBuffer);
+		if (FAILED(hr))
+		{
+			return false;
+		}
+
+		D3D11_BUFFER_DESC indexBufferDesc;
+		ZeroMemory(&indexBufferDesc, sizeof(indexBufferDesc));
+		indexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
+		indexBufferDesc.ByteWidth = sizeof(VertexPosTexcoord) * g_CylinderIndices.size();
+		indexBufferDesc.CPUAccessFlags = 0;
+		indexBufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
+		indexBufferDesc.MiscFlags = 0;
+		resourceData.pSysMem = &g_CylinderIndices[0];
+		hr = g_pGameContextD3D11->getDevice()->CreateBuffer(&indexBufferDesc, &resourceData, &g_CylinderIndexBuffer);
+		if (FAILED(hr))
+		{
+			return false;
+		}
+	}
+
+	// load texture from a file
+	{
 		HRESULT hr = CreateWICTextureFromFile(
 			g_pGameContextD3D11->m_d3dDevice,
 			g_pGameContextD3D11->m_d3dDeviceContext,
-			L"../Textures/test.png",
+			L"../Textures/brickwall.jpg",
 			&g_pTexture2DResource,
 			&g_pShaderResourceView
 		);
@@ -365,7 +383,8 @@ bool LoadContent()
 
 	}
 
-	{// create the constant buffers for the variables defined 
+	// create the constant buffers for the variables defined 
+	{
 		D3D11_BUFFER_DESC constantBufferDesc;
 		ZeroMemory(&constantBufferDesc, sizeof(D3D11_BUFFER_DESC));
 
@@ -374,46 +393,40 @@ bool LoadContent()
 		constantBufferDesc.CPUAccessFlags = 0;
 		constantBufferDesc.Usage = D3D11_USAGE_DEFAULT;
 
-		HRESULT hr = g_pGameContextD3D11->m_d3dDevice->CreateBuffer(&constantBufferDesc, nullptr, &g_d3dConstantBuffers[ConstantBuffer::CB_Application]);
+		HRESULT hr = g_pGameContextD3D11->m_d3dDevice->CreateBuffer(&constantBufferDesc, nullptr, &g_d3dGeneralConstantBuffers[GeneralConstantBuffer::CB_Application]);
 		if (FAILED(hr))
 		{
 			return false;
 		}
 
-		hr = g_pGameContextD3D11->m_d3dDevice->CreateBuffer(&constantBufferDesc, nullptr, &g_d3dConstantBuffers[ConstantBuffer::CB_Frame]);
+		hr = g_pGameContextD3D11->m_d3dDevice->CreateBuffer(&constantBufferDesc, nullptr, &g_d3dGeneralConstantBuffers[GeneralConstantBuffer::CB_Frame]);
 		if (FAILED(hr))
 		{
 			return false;
 		}
 
-		hr = g_pGameContextD3D11->m_d3dDevice->CreateBuffer(&constantBufferDesc, nullptr, &g_d3dConstantBuffers[ConstantBuffer::CB_Object]);
+		//----------------------------------
+		constantBufferDesc.ByteWidth = sizeof(XMMATRIX) * MAX_NUM_MESH_INSTANCE;
+		hr = g_pGameContextD3D11->m_d3dDevice->CreateBuffer(&constantBufferDesc, nullptr, &g_pGameContextD3D11->m_constantBufferAllMeshPositions);
 		if (FAILED(hr))
 		{
 			return false;
 		}
 	}
 
-	{// set input layout and compile shader
+	// generate input layout and compile shader
+	{
 		D3D11_INPUT_ELEMENT_DESC vertexLayoutDesc[] = {
-			{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, offsetof(VertexPosColor, Position), D3D11_INPUT_PER_VERTEX_DATA, 0},
+			{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, offsetof(VertexPosTexcoord, Position), D3D11_INPUT_PER_VERTEX_DATA, 0},
 			//{ "COLOR", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, offsetof(VertexPosColor,Color), D3D11_INPUT_PER_VERTEX_DATA, 0 }
-			{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, offsetof(VertexPosColor,Color), D3D11_INPUT_PER_VERTEX_DATA, 0 }
+			{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, offsetof(VertexPosTexcoord, TexCoord), D3D11_INPUT_PER_VERTEX_DATA, 0 }
 		};
-		/*
-		g_VertexShader = new VertexShader(g_pGameContextD3D11);
-		g_VertexShader->LoadFromFileAndCompile(L"../Shaders/SimpleVertexShader.hlsl", "SimpleVertexShader", "latest", vertexLayoutDesc, _countof(vertexLayoutDesc));
-
-		g_PixelShader = new PixelShader(g_pGameContextD3D11);
-		g_PixelShader->LoadFromFileAndCompile(L"../Shaders/SimplePixelShader.hlsl", "SimplePixelShader", "latest");
-		*/
 		g_VSPSShader = new VSPSShader(g_pGameContextD3D11);
 		g_VSPSShader->LoadAndCompileShaderWithInputLayout(
 			L"../Shaders/SimpleVertexShader.hlsl", "SimpleVertexShader",
 			L"../Shaders/SimplePixelShader.hlsl", "SimplePixelShader",
 			vertexLayoutDesc, _countof(vertexLayoutDesc));
-
 	}
-
 
 	{// setup the projection matrix
 		RECT clientRect;
@@ -425,22 +438,48 @@ bool LoadContent()
 		float clientHeight = static_cast<float>(clientRect.bottom - clientRect.top);
 
 		g_ProjectionMatrix = XMMatrixPerspectiveFovLH(XMConvertToRadians(45.0f), clientWidth / clientHeight, 0.1f, 100.0f);
-		g_pGameContextD3D11->m_d3dDeviceContext->UpdateSubresource(g_d3dConstantBuffers[ConstantBuffer::CB_Application], 0, nullptr, &g_ProjectionMatrix, 0, 0);
+		g_pGameContextD3D11->m_d3dDeviceContext->UpdateSubresource(g_d3dGeneralConstantBuffers[GeneralConstantBuffer::CB_Application], 0, nullptr, &g_ProjectionMatrix, 0, 0);
 	}
+
+	ConstructWorld();
+	return true;
+}
+
+bool ConstructWorld()
+{
+	g_pCubeMesh = new Mesh(g_pGameContextD3D11, &g_d3dVertexTexcoordBuffer, 1, &VertexPosTexcoordStride, &offset,
+		g_d3dIndexTexcoordBuffer, _countof(g_CubeIndicesTexcoord), DXGI_FORMAT_R16_UINT, offset);
+
+	XMMATRIX ts1[] = {// next step: debug here, its not correct
+		XMMatrixTranslation(-1.0f, -1.0f, -1.0f),
+		XMMatrixTranslation(-2.0f, -2.0f, -2.0f),
+		XMMatrixTranslation(-3.0f, -3.0f, -3.0f),
+
+	};
+	g_pCubeMesh->GenerateInstances(ts1, _countof(ts1));
+
+	g_pCylinderMesh = new Mesh(g_pGameContextD3D11,
+		&g_CylinderVertexTexcoordBuffer, 1, &VertexPosTexcoordStride, &offset,
+		g_CylinderIndexBuffer, g_CylinderIndices.size(), DXGI_FORMAT_R16_UINT, offset);
+
+	XMMATRIX ts2[] = {// next step: debug here, its not correct
+	XMMatrixRotationRollPitchYaw(60, 0, 0) * XMMatrixTranslation(-1.0f, -1.0f, -1.0f),
+	XMMatrixRotationRollPitchYaw(0, 135, 0) * XMMatrixTranslation(-3.0f, -3.0f, -3.0f),
+	XMMatrixRotationRollPitchYaw(0, 0, 60) * XMMatrixTranslation(-5.0f, -5.0f, -5.0f),
+	};
+	g_pCylinderMesh->GenerateInstances(g_TestInitTransforms, _countof(g_TestInitTransforms));
+
 	return true;
 }
 
 void UnloadContent()
 {
-	SafeRelease(g_d3dConstantBuffers[ConstantBuffer::CB_Application]);
-	SafeRelease(g_d3dConstantBuffers[ConstantBuffer::CB_Frame]);
-	SafeRelease(g_d3dConstantBuffers[ConstantBuffer::CB_Object]);
-	SafeRelease(g_d3dInputLayout);
-	//SafeRelease(g_d3dVertexShader);
-	//SafeRelease(g_d3dPixelShader);
-	//delete(g_VertexShader);
-	//delete(g_PixelShader);
+	SafeRelease(g_d3dGeneralConstantBuffers[GeneralConstantBuffer::CB_Application]);
+	SafeRelease(g_d3dGeneralConstantBuffers[GeneralConstantBuffer::CB_Frame]);
+
 	delete(g_VSPSShader);
+	delete(g_pCubeMesh);
+	delete(g_pCylinderMesh);
 }
 
 void Cleanup()
@@ -774,6 +813,7 @@ int InitDirectX(HINSTANCE hInstance, BOOL vSync)
 
 	rasterizerDesc.AntialiasedLineEnable = FALSE;
 	rasterizerDesc.CullMode = D3D11_CULL_BACK;
+	//rasterizerDesc.CullMode = D3D11_CULL_NONE;
 	rasterizerDesc.DepthBias = 0;
 	rasterizerDesc.DepthBiasClamp = 0.0f;
 	rasterizerDesc.DepthClipEnable = TRUE;
@@ -800,21 +840,6 @@ int InitDirectX(HINSTANCE hInstance, BOOL vSync)
 
 	return 0;
 }
-
-/* //test __count_of()
-template <typename _MyType, size_t SizeOfArray>
-char(*my_count_of(const _MyType(&_InArrayName)[SizeOfArray]))[SizeOfArray];
-
-int testArr[] = { 1, 2, 3 };
-
-size_t f = (sizeof(*my_count_of(testArr)+0));
-
-
-auto ff = my_count_of(testArr); // this line will result in unresolved symbol because it's a real function call
-char* fff[3];
-char(*ffff)[3] = ff;
-*/
-
 
 int WINAPI wWinMain(
 	_In_ HINSTANCE hInstance,
@@ -844,7 +869,7 @@ int WINAPI wWinMain(
 		return -1;
 	}
 
-	if (!LoadContent())
+	if (!LoadAndGenerateBuffers())
 	{
 		MessageBox(nullptr, TEXT("Failed to load content."), TEXT("Error"), MB_OK);
 		return -1;
@@ -858,3 +883,95 @@ int WINAPI wWinMain(
 	return returnCode;
 }
 
+void GenerateCylinderVerticesAndTexcoords(float radius, float height, unsigned int numPolygonSides = 16)
+{
+	//std::vector<XMFLOAT3> vertices;
+	//std::vector<WORD> indices;
+
+	// let's set the origin to the mid-height center
+	// bottom
+	g_CylinderVerticesTexcoord.push_back({ XMFLOAT3(0, -height / 2, 0), XMFLOAT2(0, 0) }); // [0]
+	for (int i = 0; i < numPolygonSides; i++) // [1...numPolygonSides]
+	{
+		float radians = XMConvertToRadians(i * 360.0f / numPolygonSides);
+		float sinValue = sinf(radians);
+		float cosValue = cosf(radians);
+		g_CylinderVerticesTexcoord.push_back(
+			{ XMFLOAT3(sinValue * radius, -height / 2, cosValue * radius), XMFLOAT2((sinValue + 1.0) / 2, (cosValue + 1.0) / 2) }
+		);
+	}
+	// top
+	g_CylinderVerticesTexcoord.push_back({ XMFLOAT3(0, height / 2, 0), XMFLOAT2(0, 0) }); // [numPolygonSides+1]
+	for (int i = 0; i < numPolygonSides; i++) // [numPolygonSides+1 +1 ... numPolygonSides+1+ numPolygonSides]
+	{
+		float radians = XMConvertToRadians(i * 360.0f / numPolygonSides);
+		float sinValue = sinf(radians);
+		float cosValue = cosf(radians);
+		g_CylinderVerticesTexcoord.push_back(
+			{ XMFLOAT3(sinValue * radius, height / 2, cosValue * radius), XMFLOAT2((sinValue + 1.0) / 2, (cosValue + 1.0) / 2) }
+		);
+	}
+
+	// generate indices
+	// note: front face is CLOCKWISE according to dx11 default
+	// bottom face
+	UINT topFaceIndexOffset = numPolygonSides + 1;
+	for (int i = 1; i <= numPolygonSides; i++)
+	{
+		g_CylinderIndices.push_back(0);
+		g_CylinderIndices.push_back(i == numPolygonSides ? 1 : i + 1);
+		g_CylinderIndices.push_back(i);
+	}
+	// top face
+	for (int i = 1; i <= numPolygonSides; i++)
+	{
+		g_CylinderIndices.push_back(topFaceIndexOffset + 0);
+		g_CylinderIndices.push_back(topFaceIndexOffset + i);
+		g_CylinderIndices.push_back(i == numPolygonSides ? (topFaceIndexOffset + 1) : (topFaceIndexOffset + i + 1));
+	}
+	// side faces
+	for (int i = 1; i <= numPolygonSides; i++)
+	{
+		// bottom, top, top-next
+		g_CylinderIndices.push_back(i);
+		g_CylinderIndices.push_back(i == numPolygonSides ? (topFaceIndexOffset + 1) : (topFaceIndexOffset + i + 1));
+		g_CylinderIndices.push_back(i + topFaceIndexOffset);
+
+		// bottom, top-next, bottom-next
+		g_CylinderIndices.push_back(i);
+		g_CylinderIndices.push_back(i == numPolygonSides ? 1 : i + 1);
+		g_CylinderIndices.push_back(i == numPolygonSides ? (topFaceIndexOffset + 1) : (topFaceIndexOffset + i + 1));
+	}
+}
+
+/*
+struct VertexPosColor
+{
+	XMFLOAT3 Position;
+	XMFLOAT3 Color;
+};*/
+
+// the vertices and indices of an untextured cube
+/*
+VertexPosColor g_Vertices[8] =
+{
+	{ XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, 0.0f) }, // 0
+	{ XMFLOAT3(-1.0f,  1.0f, -1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) }, // 1
+	{ XMFLOAT3(1.0f,  1.0f, -1.0f), XMFLOAT3(1.0f, 1.0f, 0.0f) }, // 2
+	{ XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) }, // 3
+	{ XMFLOAT3(-1.0f, -1.0f,  1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) }, // 4
+	{ XMFLOAT3(-1.0f,  1.0f,  1.0f), XMFLOAT3(0.0f, 1.0f, 1.0f) }, // 5
+	{ XMFLOAT3(1.0f,  1.0f,  1.0f), XMFLOAT3(1.0f, 1.0f, 1.0f) }, // 6
+	{ XMFLOAT3(1.0f, -1.0f,  1.0f), XMFLOAT3(1.0f, 0.0f, 1.0f) }  // 7
+};
+
+WORD g_Indicies[36] =
+{
+	0, 1, 2, 0, 2, 3,
+	4, 6, 5, 4, 7, 6,
+	4, 5, 1, 4, 1, 0,
+	3, 2, 6, 3, 6, 7,
+	1, 5, 6, 1, 6, 2,
+	4, 0, 3, 4, 3, 7
+};
+*/

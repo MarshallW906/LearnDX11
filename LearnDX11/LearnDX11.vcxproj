@@ -156,12 +156,16 @@
     </ClCompile>
     <ClCompile Include="GameContextD3D11.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="Mesh.cpp" />
+    <ClCompile Include="MeshInstance.cpp" />
     <ClCompile Include="VSPSShader.cpp" />
     <ClCompile Include="WICTextureLoader.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="DirectXTemplatePCH.h" />
     <ClInclude Include="GameContextD3D11.h" />
+    <ClInclude Include="Mesh.h" />
+    <ClInclude Include="MeshInstance.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="VSPSShader.h" />
     <ClInclude Include="WICTextureLoader.h" />
