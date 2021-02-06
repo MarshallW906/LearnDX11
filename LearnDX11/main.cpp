@@ -177,15 +177,20 @@ void Update(float deltaTime)
 	XMVECTOR rotationAxisZ = XMVectorSet(0, 0, 1, 0);
 	*/
 	std::vector<MeshInstance*> cylinderInstances = g_pCylinderMesh->GetAllInstances();
-	
+	/*
+	cylinderInstances[0]->ApplyTransform(
+		//XMMatrixRotationX(angleRadians)
+		XMMatrixTranslation(sinf(XMConvertToRadians(angle * 10.0f)), 0, 0)
+	);*/
 	cylinderInstances[0]->UpdateLocalTransform(
-		XMMatrixRotationX(angleRadians) * cylinderInstances[0]->GetLocalTransform()
+		XMMatrixTranslation(3 * sinf(XMConvertToRadians(angle * 10.0f)), 0, 0)
 	);
-	cylinderInstances[1]->UpdateLocalTransform(
-		XMMatrixRotationY(angleRadians) * cylinderInstances[1]->GetLocalTransform()
+	cylinderInstances[1]->ApplyTransform(
+		XMMatrixRotationY(angleRadians)
 	);
-	cylinderInstances[2]->UpdateLocalTransform(
-		XMMatrixRotationZ(angleRadians) * cylinderInstances[2]->GetLocalTransform()
+	
+	cylinderInstances[2]->ApplyTransform(
+		XMMatrixRotationZ(angleRadians)
 	);
 }
 
@@ -467,7 +472,11 @@ bool ConstructWorld()
 	XMMatrixRotationRollPitchYaw(0, 135, 0) * XMMatrixTranslation(-3.0f, -3.0f, -3.0f),
 	XMMatrixRotationRollPitchYaw(0, 0, 60) * XMMatrixTranslation(-5.0f, -5.0f, -5.0f),
 	};
-	g_pCylinderMesh->GenerateInstances(g_TestInitTransforms, _countof(g_TestInitTransforms));
+	UINT cIndex = g_pCylinderMesh->GenerateInstances(g_TestInitTransforms, _countof(g_TestInitTransforms));
+	std::vector<MeshInstance*>& cylinderInstances = g_pCylinderMesh->GetAllInstances();
+	cylinderInstances[cIndex + 1]->SetParentMeshInstance(cylinderInstances[cIndex]);
+	cylinderInstances[cIndex + 2]->SetParentMeshInstance(cylinderInstances[cIndex + 1]);
+
 
 	return true;
 }

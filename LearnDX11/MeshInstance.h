@@ -15,13 +15,13 @@ public:
 	MeshInstance(GameContextD3D11* pGameContext, Mesh* pMesh, XMMATRIX localTransform);
 
 	bool IsStatic() const;
-	const bool IsRoot() const;
 
 	const XMMATRIX& GetLocalTransform() const;
-	const XMMATRIX& GetWorldToParentTransform() const;
-	XMMATRIX GetCurrentFinalTransform() const;
+	const XMMATRIX& GetParentTransform() const;
+	XMMATRIX GetWorldTransform() const;
 
-	void UpdateLocalTransform(XMMATRIX localTransform);
+	void ApplyTransform(XMMATRIX transform);
+	void UpdateLocalTransform(XMMATRIX newLocalTransform);
 
 	void SetParentMeshInstance(MeshInstance* pParentMeshInstance);
 
@@ -31,10 +31,6 @@ private:
 
 	GameContextD3D11* m_pGameContext;
 
-	// If (m_isRoot) then it's parented by a Node
-	// otherwise it's parented by another MeshInstance
-	// TODO: for now we keep it simple, but we need to change them to COM-objects
-	bool m_isRoot;
 	MeshInstance* m_pParentMeshInstance;
 
 	friend class Mesh;
@@ -42,6 +38,5 @@ private:
 
 	bool m_isStatic;
 	XMMATRIX m_localTransform;
-	XMMATRIX m_worldToParentTransform;
 };
 
