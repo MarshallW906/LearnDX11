@@ -47,5 +47,8 @@ void MeshInstance::UpdateLocalTransform(XMMATRIX newLocalTransform)
 
 void MeshInstance::SetParentMeshInstance(MeshInstance* pParentMeshInstance)
 {
+	// newLocal = currentWorldTransform * newParentTransform.Inverse
+	m_localTransform = GetWorldTransform() * XMMatrixInverse(nullptr, pParentMeshInstance->GetWorldTransform());
+	
 	m_pParentMeshInstance = pParentMeshInstance;
 }
