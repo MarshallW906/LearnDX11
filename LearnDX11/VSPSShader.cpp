@@ -21,15 +21,25 @@ VSPSShader::~VSPSShader()
 }
 
 void VSPSShader::LoadAndCompileShaderWithInputLayout(
-	LPCWSTR vsFile, LPCSTR vsEntryPoint, 
-	LPCWSTR psFile, LPCSTR psEntryPoint, 
-	D3D11_INPUT_ELEMENT_DESC *inputLayoutDesc, UINT inputLayoutElementCount)
+	LPCWSTR vsFile, LPCSTR vsEntryPoint, LPCSTR vsProfileVersion,
+	LPCWSTR psFile, LPCSTR psEntryPoint, LPCSTR psProfileVersion,
+	D3D11_INPUT_ELEMENT_DESC* inputLayoutDesc, UINT inputLayoutElementCount)
 {
 	ID3DBlob* pErrorBlob;
 
+	const char* realVSProfile;
+	if (vsProfileVersion == "latest")
+	{
+		realVSProfile = GetLatestProfileVS(m_pGameContext);
+	}
+	else
+	{
+		realVSProfile = vsProfileVersion;
+	}
+
 	HRESULT hr = D3DCompileFromFile(
 		vsFile, nullptr, nullptr, vsEntryPoint,
-		GetLatestProfileVS(m_pGameContext),
+		realVSProfile,
 		D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_DEBUG,
 		0,
 		&m_pVSBlob,
@@ -47,7 +57,7 @@ void VSPSShader::LoadAndCompileShaderWithInputLayout(
 		}
 		return;
 	}
-	
+
 	hr = m_pGameContext->m_d3dDevice->CreateVertexShader(m_pVSBlob->GetBufferPointer(), m_pVSBlob->GetBufferSize(), nullptr, &m_pVertexShader);
 	if (FAILED(hr))
 	{
@@ -55,9 +65,18 @@ void VSPSShader::LoadAndCompileShaderWithInputLayout(
 	}
 
 	// pixel shader
+	const char* realPSProfile;
+	if (psProfileVersion == "latest")
+	{
+		realPSProfile = GetLatestProfilePS(m_pGameContext);
+	}
+	else
+	{
+		realPSProfile = psProfileVersion;
+	}
 	hr = D3DCompileFromFile(
 		psFile, nullptr, nullptr, psEntryPoint,
-		GetLatestProfilePS(m_pGameContext),
+		realPSProfile,
 		D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_DEBUG,
 		0,
 		&m_pPSBlob,

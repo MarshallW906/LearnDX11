@@ -11,8 +11,8 @@ public:
 	~VSPSShader();
 
 	void LoadAndCompileShaderWithInputLayout(
-		LPCWSTR vsFile, LPCSTR vsEntryPoint,
-		LPCWSTR psFile, LPCSTR psEntryPoint,
+		LPCWSTR vsFile, LPCSTR vsEntryPoint, LPCSTR vsProfileVersion,
+		LPCWSTR psFile, LPCSTR psEntryPoint, LPCSTR psProfileVersion,
 		D3D11_INPUT_ELEMENT_DESC* inputLayoutDesc, UINT inputLayoutElementCount);
 	void BindShaderAndLayout();
 

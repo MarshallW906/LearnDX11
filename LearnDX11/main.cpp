@@ -231,8 +231,6 @@ void Update(float deltaTime)
 	}
 
 	// view matrix
-	XMVECTOR eyePosition = XMVectorSet(0, 10, -20, 1);
-	XMVECTOR focusPoint = XMVectorSet(0, 0, 0, 1);
 	XMVECTOR upDirection = XMVectorSet(0, 1, 0, 0);
 	//g_ViewMatrix = XMMatrixLookAtLH(eyePosition, focusPoint, upDirection);
 	//g_pCamera->SetViewRollPitchYawInAngles(-angle * 10, 0, 0);
@@ -411,12 +409,18 @@ bool LoadAndGenerateBuffers()
 	GenerateSphereVertexAndIndexBuffer(10, 10);
 	// skybox shader
 	{
-		/*
+		
 		g_pSkyboxShader = new VSPSShader(g_pGameContextD3D11);
 
-		g_pSkyboxShader->LoadAndCompileShaderWithInputLayout(
+		D3D11_INPUT_ELEMENT_DESC skyboxLayoutDesc[] = {
+			{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, offsetof(Vertex, Position), D3D11_INPUT_PER_VERTEX_DATA, 0},
+		};
 
-		);*/
+		g_pSkyboxShader->LoadAndCompileShaderWithInputLayout(
+			L"../Shaders/Skymap_VSPS.hlsl", "SKYMAP_VS", "vs_4_0",
+			L"../Shaders/Skymap_VSPS.hlsl", "SKYMAP_PS", "ps_4_0",
+			skyboxLayoutDesc, _countof(skyboxLayoutDesc)
+		);
 	}
 
 	// load texture from a file
@@ -522,8 +526,8 @@ bool LoadAndGenerateBuffers()
 		};
 		g_VSPSShader = new VSPSShader(g_pGameContextD3D11);
 		g_VSPSShader->LoadAndCompileShaderWithInputLayout(
-			L"../Shaders/StaticMesh_VS.hlsl", "StaticMesh_VS",
-			L"../Shaders/StaticMesh_PS.hlsl", "StaticMesh_PS",
+			L"../Shaders/StaticMesh_VS.hlsl", "StaticMesh_VS", "latest",
+			L"../Shaders/StaticMesh_PS.hlsl", "StaticMesh_PS", "latest",
 			vertexLayoutDesc, _countof(vertexLayoutDesc));
 	}
 

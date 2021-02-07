@@ -38,11 +38,10 @@ struct VS_Output
 VS_Output StaticMesh_VS(AppData IN, uint instanceID : SV_InstanceID)
 {
 	VS_Output OUT;
-	matrix mvp = mul(projectionMatrix, mul(viewMatrix, worldMatrix[instanceID]));
 	float3 pos = IN.position;
-	//posOffset.x += instanceID * 4.0f; // test instanceID
+
+	matrix mvp = mul(projectionMatrix, mul(viewMatrix, worldMatrix[instanceID]));
 	OUT.position = mul(mvp, float4 (pos, 1.0f));
-	//OUT.position = mul(mvp, float4 (IN.position, 1.0f));
 	OUT.texcoord = IN.texcoord;
 
 	return OUT;

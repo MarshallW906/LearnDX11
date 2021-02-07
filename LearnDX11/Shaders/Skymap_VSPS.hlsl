@@ -1,7 +1,6 @@
 cbuffer cbPerObject
 {
     float4x4 WVP;
-    float4x4 World;
 };
 
 struct SKYMAP_VS_OUTPUT    //output structure for skymap vertex shader
@@ -11,7 +10,7 @@ struct SKYMAP_VS_OUTPUT    //output structure for skymap vertex shader
 };
 
 
-SKYMAP_VS_OUTPUT SKYMAP_VS(float3 inPos : POSITION, float2 inTexCoord : TEXCOORD, float3 normal : NORMAL)
+SKYMAP_VS_OUTPUT SKYMAP_VS(float3 inPos : POSITION)
 {
     SKYMAP_VS_OUTPUT output = (SKYMAP_VS_OUTPUT)0;
 
