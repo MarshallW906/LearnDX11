@@ -9,7 +9,7 @@ struct PixelShaderInput
 Texture2D ObjTexture;
 SamplerState ObjSamplerState;
 
-float4 SimplePixelShader(PixelShaderInput IN) : SV_TARGET{
+float4 StaticMesh_PS(PixelShaderInput IN) : SV_TARGET{
 	//return IN.color;
 	return ObjTexture.Sample(ObjSamplerState, IN.texcoord);
 }

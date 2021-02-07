@@ -28,16 +28,16 @@ struct AppData
 	float2 texcoord: TEXCOORD;
 };
 
-struct VertexShaderOutput
+struct VS_Output
 {
 	float4 position : SV_POSITION;
 	//float4 color : COLOR;
 	float2 texcoord : TEXCOORD;
 };
 
-VertexShaderOutput SimpleVertexShader(AppData IN, uint instanceID : SV_InstanceID)
+VS_Output StaticMesh_VS(AppData IN, uint instanceID : SV_InstanceID)
 {
-	VertexShaderOutput OUT;
+	VS_Output OUT;
 	matrix mvp = mul(projectionMatrix, mul(viewMatrix, worldMatrix[instanceID]));
 	float3 pos = IN.position;
 	//posOffset.x += instanceID * 4.0f; // test instanceID
