@@ -782,20 +782,28 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 		sprintf_s(buf, "on mouse move: %d, %d\n", xPos, yPos);
 		OutputDebugStringA(buf);
 		*/
+		// we dont need thread ownership here, see the comments of the function below
 		UpdateMousePosRealtime(xPos, yPos);
 	}
 	break;
 	case WM_MOUSEWHEEL:
 	{
-		//int xPos = GET_X_LPARAM(lParam);
-		//int yPos = GET_Y_LPARAM(lParam);
-		int zDelta = GET_WHEEL_DELTA_WPARAM(wParam);
-		//int mButtonDown = (GET_KEYSTATE_WPARAM(wParam) & 0x0010); // Mouse Middle Button
+		// here we don't want it to wait and block the execution of system-side functions
+		// so we only use try_lock()
+		// if it's currently locked, just skip
+		if (g_mutexThreadContext.try_lock()) // tryAcquireThreadOwnerShip()
+		{
+			//int xPos = GET_X_LPARAM(lParam);
+			//int yPos = GET_Y_LPARAM(lParam);
+			int zDelta = GET_WHEEL_DELTA_WPARAM(wParam);
+			//int mButtonDown = (GET_KEYSTATE_WPARAM(wParam) & 0x0010); // Mouse Middle Button
 
-		//static char buf[50];
-		//sprintf_s(buf, "on mouse wheel: %d, %d, %d, %d\n", xPos, yPos, zDelta, mButtonDown);
-		//OutputDebugStringA(buf);
-		UpdateMouseWheelRealtime(zDelta);
+			//static char buf[50];
+			//sprintf_s(buf, "on mouse wheel: %d, %d, %d, %d\n", xPos, yPos, zDelta, mButtonDown);
+			//OutputDebugStringA(buf);
+			UpdateMouseWheelRealtime(zDelta);
+			g_mutexThreadContext.unlock();
+		}
 	}
 	break;
 	case WM_DESTROY:
@@ -1355,13 +1363,10 @@ void UpdateMousePosRealtime(int xPos, int yPos)
 // which means that it cannot automatically change that value back to zero
 // so we need to accumulate all mouse wheel activities between each frame
 // then send it to Game Thread, where we clear it to zero after we no longer need it
+// the try_lock() is called outside, from WndProc
 void UpdateMouseWheelRealtime(int wheelDelta)
 {
-	if (g_mutexThreadContext.try_lock())
-	{
-		g_realtimeWheelDelta += wheelDelta;
-		g_mutexThreadContext.unlock();
-	}
+	g_realtimeWheelDelta += wheelDelta;
 }
 
 void OnMousePosChangedPerFrame(float deltaTime)
