@@ -5,6 +5,7 @@
 #include "VSPSShader.h"
 #include "Mesh.h"
 #include "MeshInstance.h"
+#include "Camera.h"
 
 #include "WICTextureLoader.h"
 
@@ -50,6 +51,8 @@ ID3D11ShaderResourceView* g_pShaderResourceView_2 = nullptr;
 
 ID3D11SamplerState* g_pSamplerState = nullptr;
 
+Camera* g_pCamera;
+
 // Shader data
 VSPSShader* g_VSPSShader = nullptr;
 
@@ -61,14 +64,14 @@ UINT g_carWheelsStartIndex = 0; // 0: front-left, 1: front-right, 2: back-left, 
 
 
 // Shader resources
-enum GeneralConstantBuffer
+enum StaticMeshConstantBuffer
 {
 	CB_Application,
 	CB_Frame,
 	NumGeneralConstantBuffers,
 };
 
-ID3D11Buffer* g_d3dGeneralConstantBuffers[GeneralConstantBuffer::NumGeneralConstantBuffers];
+ID3D11Buffer* g_d3dGeneralConstantBuffers[StaticMeshConstantBuffer::NumGeneralConstantBuffers];
 
 
 XMMATRIX g_ViewMatrix;
@@ -216,7 +219,9 @@ void Update(float deltaTime)
 	XMVECTOR eyePosition = XMVectorSet(0, 10, -20, 1);
 	XMVECTOR focusPoint = XMVectorSet(0, 0, 0, 1);
 	XMVECTOR upDirection = XMVectorSet(0, 1, 0, 0);
-	g_ViewMatrix = XMMatrixLookAtLH(eyePosition, focusPoint, upDirection);
+	//g_ViewMatrix = XMMatrixLookAtLH(eyePosition, focusPoint, upDirection);
+	g_pCamera->SetThirdViewRollPitchYaw(-angle * 10, 0, 0);
+	g_ViewMatrix = g_pCamera->GetViewMatrix(upDirection);
 
 	// world(model) matrix
 
@@ -281,7 +286,7 @@ void Render()
 	Clear(Colors::CornflowerBlue, 1.0f, 0);
 
 	// Refresh constant buffer resources with the new data (which is the data updated from Update())
-	g_pGameContextD3D11->m_d3dDeviceContext->UpdateSubresource(g_d3dGeneralConstantBuffers[GeneralConstantBuffer::CB_Frame], 0, nullptr, &g_ViewMatrix, 0, 0);
+	g_pGameContextD3D11->m_d3dDeviceContext->UpdateSubresource(g_d3dGeneralConstantBuffers[StaticMeshConstantBuffer::CB_Frame], 0, nullptr, &g_ViewMatrix, 0, 0);
 
 	// D3D11 Pipeline: RS: rasterizer stage
 	g_pGameContextD3D11->m_d3dDeviceContext->RSSetState(g_pGameContextD3D11->m_d3dRasterizerState);
@@ -298,8 +303,8 @@ void Render()
 	// ====================================================
 	// D3D11 Pipeline: IA: input assembler stage
 	// D3D11 Pipeline: VS: vertex shader stage
-	g_pGameContextD3D11->m_d3dDeviceContext->VSSetConstantBuffers(0, GeneralConstantBuffer::NumGeneralConstantBuffers, g_d3dGeneralConstantBuffers);
-	g_pGameContextD3D11->m_d3dDeviceContext->VSSetConstantBuffers(GeneralConstantBuffer::NumGeneralConstantBuffers, 1, &g_pGameContextD3D11->m_constantBufferAllMeshPositions);
+	g_pGameContextD3D11->m_d3dDeviceContext->VSSetConstantBuffers(0, StaticMeshConstantBuffer::NumGeneralConstantBuffers, g_d3dGeneralConstantBuffers);
+	g_pGameContextD3D11->m_d3dDeviceContext->VSSetConstantBuffers(StaticMeshConstantBuffer::NumGeneralConstantBuffers, 1, &g_pGameContextD3D11->m_constantBufferAllMeshPositions);
 	g_VSPSShader->BindShaderAndLayout();
 
 	// D3D11 Pipeline: PS: pixel shader stage
@@ -468,13 +473,13 @@ bool LoadAndGenerateBuffers()
 		constantBufferDesc.CPUAccessFlags = 0;
 		constantBufferDesc.Usage = D3D11_USAGE_DEFAULT;
 
-		HRESULT hr = g_pGameContextD3D11->m_d3dDevice->CreateBuffer(&constantBufferDesc, nullptr, &g_d3dGeneralConstantBuffers[GeneralConstantBuffer::CB_Application]);
+		HRESULT hr = g_pGameContextD3D11->m_d3dDevice->CreateBuffer(&constantBufferDesc, nullptr, &g_d3dGeneralConstantBuffers[StaticMeshConstantBuffer::CB_Application]);
 		if (FAILED(hr))
 		{
 			return false;
 		}
 
-		hr = g_pGameContextD3D11->m_d3dDevice->CreateBuffer(&constantBufferDesc, nullptr, &g_d3dGeneralConstantBuffers[GeneralConstantBuffer::CB_Frame]);
+		hr = g_pGameContextD3D11->m_d3dDevice->CreateBuffer(&constantBufferDesc, nullptr, &g_d3dGeneralConstantBuffers[StaticMeshConstantBuffer::CB_Frame]);
 		if (FAILED(hr))
 		{
 			return false;
@@ -514,7 +519,7 @@ bool LoadAndGenerateBuffers()
 		float clientHeight = static_cast<float>(clientRect.bottom - clientRect.top);
 
 		g_ProjectionMatrix = XMMatrixPerspectiveFovLH(XMConvertToRadians(45.0f), clientWidth / clientHeight, 0.1f, 100.0f);
-		g_pGameContextD3D11->m_d3dDeviceContext->UpdateSubresource(g_d3dGeneralConstantBuffers[GeneralConstantBuffer::CB_Application], 0, nullptr, &g_ProjectionMatrix, 0, 0);
+		g_pGameContextD3D11->m_d3dDeviceContext->UpdateSubresource(g_d3dGeneralConstantBuffers[StaticMeshConstantBuffer::CB_Application], 0, nullptr, &g_ProjectionMatrix, 0, 0);
 	}
 
 	ConstructWorld();
@@ -536,13 +541,13 @@ bool ConstructWorld()
 
 	// generate some ornaments
 	XMMATRIX cubeOrnaments[] = {
-		XMMatrixScaling(50, 0.1, 50) * XMMatrixTranslation(0, -1, 0), // cubeplane
+		XMMatrixScaling(50, 0.1, 50) * XMMatrixTranslation(0, -2, 0), // cubeplane
 		XMMatrixScaling(2, 2, 2) * XMMatrixTranslation(-14.5, 0, 11.5),
 		XMMatrixScaling(2, 2, 2) * XMMatrixTranslation(14.5, 0, 11.5),
 		XMMatrixScaling(2, 2, 2) * XMMatrixTranslation(-14.5, 0, -11.5),
 		XMMatrixScaling(2, 2, 2) * XMMatrixTranslation(14.5, 0, -11.5),
 	};
-	//g_pCubeMesh->GenerateInstances(cubeOrnaments, _countof(cubeOrnaments), true);
+	g_pCubeMesh->GenerateInstances(cubeOrnaments, _countof(cubeOrnaments), true);
 
 	// 2: construct a car by one cube body & 4 cylinder wheels
 	XMMATRIX CarBody = XMMatrixScaling(2, 0.5, 3);
@@ -564,7 +569,13 @@ bool ConstructWorld()
 	UINT carCapIndex = g_pCylinderMesh->GenerateInstances(&cylinderCarCap, 1, false);
 	refCylinderInstances[carCapIndex]->SetParentMeshInstance(refCubeInstances[g_carBodyIndex]);
 
-	
+	// create Camera
+	g_pCamera = new Camera();
+	g_pCamera->SetEnableFirstPersonView(false);
+	g_pCamera->SetFollowTarget(refCubeInstances[g_carBodyIndex]);
+	g_pCamera->SetThirdViewFollowDistance(20); // 20 is default value
+
+
 	// [OK] NEXT STEP 1: generate some (TODO: static) cube/cylinders as ornaments, put them in the scene
 	// [OK] NEXT STEP 2: construct a "car" (4 cylinders under 1 cube), expose references of the "car"'s root, and its two front wheels
 	// [OK] NEXT STEP 3: add keyboard detection, WASD move the car
@@ -583,12 +594,13 @@ bool ConstructWorld()
 
 void UnloadContent()
 {
-	SafeRelease(g_d3dGeneralConstantBuffers[GeneralConstantBuffer::CB_Application]);
-	SafeRelease(g_d3dGeneralConstantBuffers[GeneralConstantBuffer::CB_Frame]);
+	SafeRelease(g_d3dGeneralConstantBuffers[StaticMeshConstantBuffer::CB_Application]);
+	SafeRelease(g_d3dGeneralConstantBuffers[StaticMeshConstantBuffer::CB_Frame]);
 
 	delete(g_VSPSShader);
 	delete(g_pCubeMesh);
 	delete(g_pCylinderMesh);
+	delete(g_pCamera);
 }
 
 void Cleanup()
