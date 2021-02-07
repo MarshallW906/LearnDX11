@@ -77,8 +77,8 @@ void Camera::ApplyMousePos(float xPosNormalized, float yPosNormalized)
 {
 	SetViewRollPitchYawInAngles(
 		// vertical rotation, I changed the normal 0.5 to 0.3 to give it more view above the ground
-		-(yPosNormalized - 0.3) * m_camRollMax,
-		-(xPosNormalized - 0.5) * 360, // horizontal
+		(yPosNormalized - 0.3) * m_camRollMax,
+		(xPosNormalized - 0.5) * 360, // horizontal
 		0
 	);
 }
@@ -127,7 +127,9 @@ XMMATRIX Camera::GetViewMatrix(XMVECTOR worldUp)
 		// third view. we need focusPoint first and then calc cam's real pos
 		viewFocusPoint = followWorldPos;
 		XMVECTOR xmvNegDistance = XMVectorSet(0, 0, -m_ThirdViewFollowDistance, 0);
-		eyePosition = viewFocusPoint + XMQuaternionMultiply(xmvCamRot, xmvNegDistance);
+		XMVECTOR followOffset = XMVector3Rotate(xmvNegDistance, xmvCamRot);
+		eyePosition = XMVectorAdd(viewFocusPoint, followOffset);
+		
 	}
 	return XMMatrixLookAtLH(eyePosition, viewFocusPoint, worldUp);
 }
