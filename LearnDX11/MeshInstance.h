@@ -17,11 +17,14 @@ public:
 	bool IsStatic() const;
 
 	const XMMATRIX& GetLocalTransform() const;
+	const XMFLOAT3 GetLocalPos() const;
 	const XMMATRIX& GetParentTransform() const;
 	XMMATRIX GetWorldTransform() const;
-
-	void ApplyTransform(XMMATRIX transform);
 	void UpdateLocalTransform(XMMATRIX newLocalTransform);
+
+	// TODO: SelfRotateRelativelyFromQuat(Quat), this function may need re-writing
+	void SelfRotate(XMMATRIX rotationMatrix);
+	void SetRotationRollPitchYaw(float Pitch, float Yaw, float Roll);
 
 	void SetParentMeshInstance(MeshInstance* pParentMeshInstance);
 

@@ -8,6 +8,9 @@
 
 #include "WICTextureLoader.h"
 
+#include <queue>
+#include <iostream>
+
 const UINT MAX_NUM_MESH_INSTANCE = 1000;
 
 
@@ -26,10 +29,14 @@ GameContextD3D11* g_pGameContextD3D11;
 
 // D3D settings
 
-// texture
+// vertex/index buffer
 ID3D11Buffer* g_d3dVertexTexcoordBuffer = nullptr;
 ID3D11Buffer* g_d3dIndexTexcoordBuffer = nullptr;
 
+ID3D11Buffer* g_CylinderVertexTexcoordBuffer = nullptr;
+ID3D11Buffer* g_CylinderIndexBuffer = nullptr;
+
+// textures
 ID3D11Texture2D* g_pTexture2D = nullptr;
 ID3D11Resource* g_pTexture2DResource = nullptr;
 ID3D11ShaderResourceView* g_pShaderResourceView = nullptr;
@@ -40,9 +47,6 @@ ID3D11ShaderResourceView* g_pShaderResourceView_2 = nullptr;
 
 ID3D11SamplerState* g_pSamplerState = nullptr;
 
-ID3D11Buffer* g_CylinderVertexTexcoordBuffer = nullptr;
-ID3D11Buffer* g_CylinderIndexBuffer = nullptr;
-
 // Shader data
 VSPSShader* g_VSPSShader = nullptr;
 
@@ -52,11 +56,6 @@ Mesh* g_pCylinderMesh;
 UINT g_carBodyIndex = 0;
 UINT g_carWheelsStartIndex = 0; // 0: front-left, 1: front-right, 2: back-left, 3: back-right
 
-XMMATRIX g_TestInitTransforms[] = {
-	XMMatrixTranslation(1.0f, 1.0f, 1.0f),
-	XMMatrixTranslation(3.0f, 3.0f, 3.0f),
-	XMMatrixTranslation(5.0f, 5.0f, 5.0f),
-};
 
 // Shader resources
 enum GeneralConstantBuffer
@@ -150,18 +149,46 @@ void GenerateCylinderVerticesAndTexcoords(float radius, float height, unsigned i
 std::vector<VertexPosTexcoord> g_CylinderVerticesTexcoord;
 std::vector<WORD> g_CylinderIndices;
 
+// input events
+enum class KeyboardMouseEvents
+{
+	EVENT_KEY_A_HELD,
+	EVENT_KEY_D_HELD,
+	EVENT_KEY_W_HELD,
+	EVENT_KEY_S_HELD,
+	// switch camera mode
+	EVENT_KEY_Q_PRESSED,
+	// mouse wheel: zoom in/out
+	//EVENT_MOUSE_WHEEL,
+	//EVENT_MOUSE_MOVEMENT,
+};
+std::queue<KeyboardMouseEvents> g_eventQueue;
+XMFLOAT2 g_moveByInput;
+
+
 // Forward declarations
 LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
 
 bool LoadAndGenerateBuffers();
 bool ConstructWorld();
-void UnloadContent();
+
+void Clear(const FLOAT clearColor[4], FLOAT clearDepth, UINT8 clearStencil);
+void Present(bool vSync);
+
+void DetectKeyboardAndMouseEvents();
+void ProcessEvents();
 
 void Update(float deltaTime);
 void Render();
+
+void UnloadContent();
 void Cleanup();
 
 // -------------------------------------------
+
+const float carRotateSpeed = 50.0f;
+const float carWheelRotateSpeed = 100.0f;
+const float carMoveSpeed = 5.0f;
 
 void Update(float deltaTime)
 {
@@ -170,8 +197,11 @@ void Update(float deltaTime)
 
 	float angleRadians = XMConvertToRadians(angle);
 
+	DetectKeyboardAndMouseEvents();
+	ProcessEvents();
+
 	// view matrix
-	XMVECTOR eyePosition = XMVectorSet(0, 20, -40, 1);
+	XMVECTOR eyePosition = XMVectorSet(0, 10, -20, 1);
 	XMVECTOR focusPoint = XMVectorSet(0, 0, 0, 1);
 	XMVECTOR upDirection = XMVectorSet(0, 1, 0, 0);
 	g_ViewMatrix = XMMatrixLookAtLH(eyePosition, focusPoint, upDirection);
@@ -179,7 +209,53 @@ void Update(float deltaTime)
 	// world(model) matrix
 
 	std::vector<MeshInstance*>& cubeInstances = g_pCubeMesh->GetAllInstances();
-	MeshInstance* carBodyInstance = cubeInstances[g_carBodyIndex];
+	std::vector<MeshInstance*>& cylinderInstances = g_pCylinderMesh->GetAllInstances();
+
+	// Car movement
+	{
+		MeshInstance* carBodyInstance = cubeInstances[g_carBodyIndex];
+
+		MeshInstance* pFrontLeftWheel = cylinderInstances[g_carWheelsStartIndex];
+		MeshInstance* pFrontRightWheel = cylinderInstances[g_carWheelsStartIndex + 1];
+
+		bool carShouldMove = fabsf(g_moveByInput.y) > 0;
+		bool carShouldTurn = fabsf(g_moveByInput.x) > 0;
+
+		if (carShouldTurn)
+		{
+			// rotate front wheels around its Y-axis
+			pFrontLeftWheel->SetRotationRollPitchYaw(0, XMConvertToRadians(30 * g_moveByInput.x), XMConvertToRadians(90));
+			pFrontRightWheel->SetRotationRollPitchYaw(0, XMConvertToRadians(30 * g_moveByInput.x), XMConvertToRadians(90));
+			//
+			if (carShouldMove)
+			{
+				bool shouldFlipRotation = g_moveByInput.y < 0;
+				float flipRotMultiplier = shouldFlipRotation ? -1 : 1;
+				carBodyInstance->SelfRotate(XMMatrixRotationY(XMConvertToRadians(carRotateSpeed * deltaTime * g_moveByInput.x * flipRotMultiplier)));
+
+			}
+		}
+		else
+		{
+			pFrontLeftWheel->SetRotationRollPitchYaw(0, 0, XMConvertToRadians(90));
+			pFrontRightWheel->SetRotationRollPitchYaw(0, 0, XMConvertToRadians(90));
+		}
+
+		if (carShouldMove)
+		{
+			// TODO: rotate front & back wheels when moving by X-axis
+			// the following 2 lines are not correct
+			//pFrontLeftWheel->SelfRotate(XMMatrixRotationX(XMConvertToRadians(carWheelRotateSpeed)));
+			//pFrontRightWheel->SelfRotate(XMMatrixRotationX(XMConvertToRadians(carWheelRotateSpeed)));
+
+			// TODO: Add util functions like moveForward()
+			XMVECTOR vForward = XMVector3Normalize(carBodyInstance->GetLocalTransform().r[2]);//????????????????????????????????
+			XMMATRIX translation = XMMatrixTranslationFromVector(vForward * carMoveSpeed * deltaTime * g_moveByInput.y);
+			carBodyInstance->UpdateLocalTransform(
+				carBodyInstance->GetLocalTransform() * translation
+			);
+		}
+	}
 
 }
 
@@ -434,13 +510,6 @@ bool ConstructWorld()
 	std::vector<MeshInstance*>& refCubeInstances = g_pCubeMesh->GetAllInstances();
 	std::vector<MeshInstance*>& refCylinderInstances = g_pCylinderMesh->GetAllInstances();
 
-	// test Transform hierarchy. succeeded
-	/*
-	UINT cIndex = g_pCylinderMesh->GenerateInstances(g_TestInitTransforms, _countof(g_TestInitTransforms));
-	std::vector<MeshInstance*>& cylinderInstances = g_pCylinderMesh->GetAllInstances();
-	cylinderInstances[cIndex + 1]->SetParentMeshInstance(cylinderInstances[cIndex]);
-	cylinderInstances[cIndex + 2]->SetParentMeshInstance(cylinderInstances[cIndex + 1]);*/
-
 	// generate some ornaments
 	XMMATRIX cubeOrnaments[] = {
 		XMMatrixScaling(50, 0.1, 50) * XMMatrixTranslation(0, -1, 0), // cubeplane
@@ -449,7 +518,7 @@ bool ConstructWorld()
 		XMMatrixScaling(2, 2, 2) * XMMatrixTranslation(-14.5, 0, -11.5),
 		XMMatrixScaling(2, 2, 2) * XMMatrixTranslation(14.5, 0, -11.5),
 	};
-	g_pCubeMesh->GenerateInstances(cubeOrnaments, _countof(cubeOrnaments), true);
+	//g_pCubeMesh->GenerateInstances(cubeOrnaments, _countof(cubeOrnaments), true);
 
 	// 2: construct a car by one cube body & 4 cylinder wheels
 	XMMATRIX CarBody = XMMatrixScaling(2, 0.5, 3);
@@ -467,11 +536,15 @@ bool ConstructWorld()
 	{
 		refCylinderInstances[g_carWheelsStartIndex + i]->SetParentMeshInstance(refCubeInstances[g_carBodyIndex]);
 	}
+	XMMATRIX cylinderCarCap = XMMatrixScaling(.5, 0.8, .5) * XMMatrixRotationRollPitchYaw(radians90Degree, 0, 0) * XMMatrixTranslation(0, 1, 1);
+	UINT carCapIndex = g_pCylinderMesh->GenerateInstances(&cylinderCarCap, 1, false);
+	refCylinderInstances[carCapIndex]->SetParentMeshInstance(refCubeInstances[g_carBodyIndex]);
 
 	// [OK] NEXT STEP 1: generate some (TODO: static) cube/cylinders as ornaments, put them in the scene
 	// [OK] NEXT STEP 2: construct a "car" (4 cylinders under 1 cube), expose references of the "car"'s root, and its two front wheels
-	// NEXT STEP 3: add keyboard detection, WASD move the car
-	// NEXT STEP 3.1: when the car is moving, apply rotation on wheels accordingly (all wheels: forward/backward; front wheels: rotate left/right)
+	// [OK] NEXT STEP 3: add keyboard detection, WASD move the car
+	// [OK (1/2)](optional) NEXT STEP 3.1: when the car is moving, apply rotation on wheels accordingly 
+	//		     ([Not OK] all wheels: forward/backward; [OK] front wheels: rotate left/right)
 	// NEXT STEP 4: skybox. (cubemap)
 	// NEXT STEP 5.1: camera mode: 1st person view
 	// NEXT STEP 5.2: camera mode: 3rd person view
@@ -894,6 +967,7 @@ int WINAPI wWinMain(
 	return returnCode;
 }
 
+
 // Clear the color and depth buffers
 void Clear(const FLOAT clearColor[4], FLOAT clearDepth, UINT8 clearStencil)
 {
@@ -974,6 +1048,68 @@ void GenerateCylinderVerticesAndTexcoords(float radius, float height, unsigned i
 		g_CylinderIndices.push_back(i == numPolygonSides ? (topFaceIndexOffset + 1) : (topFaceIndexOffset + i + 1));
 	}
 }
+
+
+void DetectKeyboardAndMouseEvents()
+{
+	if (GetAsyncKeyState('A') & 0x8000)
+	{
+		g_eventQueue.push(KeyboardMouseEvents::EVENT_KEY_A_HELD);
+	}
+	if (GetAsyncKeyState('D') & 0x8000)
+	{
+		g_eventQueue.push(KeyboardMouseEvents::EVENT_KEY_D_HELD);
+	}
+	if (GetAsyncKeyState('W') & 0x8000)
+	{
+		g_eventQueue.push(KeyboardMouseEvents::EVENT_KEY_W_HELD);
+	}
+	if (GetAsyncKeyState('S') & 0x8000)
+	{
+		g_eventQueue.push(KeyboardMouseEvents::EVENT_KEY_S_HELD);
+	}
+	// TODO: https://www.autoitscript.com/autoit3/docs/libfunctions/_WinAPI_GetAsyncKeyState.htm
+	// This 'pressed' is not fully reliable when there is another application
+	// that could have already received the 'pressed' event before
+	// I guess ultimately this will be changed to like "Held for 0.1s"
+	if (GetAsyncKeyState('Q') & 0x01)
+	{
+		g_eventQueue.push(KeyboardMouseEvents::EVENT_KEY_Q_PRESSED);
+	}
+}
+
+void ProcessEvents()
+{
+	g_moveByInput = XMFLOAT2();
+
+	while (!g_eventQueue.empty())
+	{
+		auto inputEvent = g_eventQueue.front();
+		g_eventQueue.pop();
+
+		if (inputEvent == KeyboardMouseEvents::EVENT_KEY_A_HELD)
+		{
+			g_moveByInput.x += -1;
+		}
+		else if (inputEvent == KeyboardMouseEvents::EVENT_KEY_D_HELD)
+		{
+			g_moveByInput.x += 1;
+		}
+		else if (inputEvent == KeyboardMouseEvents::EVENT_KEY_W_HELD)
+		{
+			g_moveByInput.y += 1;
+		}
+		else if (inputEvent == KeyboardMouseEvents::EVENT_KEY_S_HELD)
+		{
+			g_moveByInput.y += -1;
+		}
+		else if (inputEvent == KeyboardMouseEvents::EVENT_KEY_Q_PRESSED)
+		{
+			// TODO: swtich camera mode
+		}
+	}
+}
+
 
 /*
 struct VertexPosColor

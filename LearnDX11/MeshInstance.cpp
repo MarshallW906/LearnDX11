@@ -6,7 +6,7 @@ MeshInstance* MeshInstance::GetParentMeshInstance() const
 	return m_pParentMeshInstance;
 }
 
-MeshInstance::MeshInstance(GameContextD3D11* pGameContext, Mesh *pMesh, XMMATRIX localTransform, bool isStatic)
+MeshInstance::MeshInstance(GameContextD3D11* pGameContext, Mesh* pMesh, XMMATRIX localTransform, bool isStatic)
 	: m_pGameContext(pGameContext)
 	, m_pMesh(pMesh)
 	, m_isStatic(isStatic)
@@ -17,12 +17,17 @@ MeshInstance::MeshInstance(GameContextD3D11* pGameContext, Mesh *pMesh, XMMATRIX
 
 bool MeshInstance::IsStatic() const
 {
-	return m_isStatic; 
+	return m_isStatic;
 }
 
 const XMMATRIX& MeshInstance::GetLocalTransform() const
 {
 	return m_localTransform;
+}
+
+const XMFLOAT3 MeshInstance::GetLocalPos() const
+{
+	return XMFLOAT3(m_localTransform.r[2].m128_f32[0], m_localTransform.r[2].m128_f32[1], m_localTransform.r[2].m128_f32[2]);
 }
 
 const XMMATRIX& MeshInstance::GetParentTransform() const
@@ -35,20 +40,29 @@ XMMATRIX MeshInstance::GetWorldTransform() const
 	return m_localTransform * GetParentTransform();
 }
 
-void MeshInstance::ApplyTransform(XMMATRIX transform)
-{
-	m_localTransform = transform * m_localTransform;
-}
-
 void MeshInstance::UpdateLocalTransform(XMMATRIX newLocalTransform)
 {
 	m_localTransform = newLocalTransform;
+}
+
+void MeshInstance::SelfRotate(XMMATRIX rotationMatrix)
+{
+	m_localTransform = rotationMatrix * m_localTransform;
+}
+
+void MeshInstance::SetRotationRollPitchYaw(float Pitch, float Yaw, float Roll)
+{
+	XMVECTOR localScale, localRotationQuat, localTranslation;
+	XMMatrixDecompose(&localScale, &localRotationQuat, &localTranslation, m_localTransform);
+
+	XMVECTOR newRotQuat = XMQuaternionRotationRollPitchYaw(Pitch, Yaw, Roll);
+	m_localTransform = XMMatrixAffineTransformation(localScale, XMVECTOR(), newRotQuat, localTranslation);
 }
 
 void MeshInstance::SetParentMeshInstance(MeshInstance* pParentMeshInstance)
 {
 	// newLocal = currentWorldTransform * newParentTransform.Inverse
 	m_localTransform = GetWorldTransform() * XMMatrixInverse(nullptr, pParentMeshInstance->GetWorldTransform());
-	
+
 	m_pParentMeshInstance = pParentMeshInstance;
 }
