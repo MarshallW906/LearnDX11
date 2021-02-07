@@ -12,6 +12,7 @@ MeshInstance::MeshInstance(GameContextD3D11* pGameContext, Mesh* pMesh, XMMATRIX
 	, m_isStatic(isStatic)
 	, m_pParentMeshInstance(nullptr)
 	, m_localTransform(localTransform)
+	, m_enableDraw(true)
 {
 }
 
@@ -65,4 +66,14 @@ void MeshInstance::SetParentMeshInstance(MeshInstance* pParentMeshInstance)
 	m_localTransform = GetWorldTransform() * XMMatrixInverse(nullptr, pParentMeshInstance->GetWorldTransform());
 
 	m_pParentMeshInstance = pParentMeshInstance;
+}
+
+bool MeshInstance::IsEnableDraw() const
+{
+	return m_enableDraw;
+}
+
+void MeshInstance::SetEnableDraw(bool enableDraw)
+{
+	m_enableDraw = enableDraw;
 }

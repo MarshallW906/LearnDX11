@@ -28,6 +28,8 @@ public:
 
 	void SetParentMeshInstance(MeshInstance* pParentMeshInstance);
 
+	bool IsEnableDraw() const;
+	void SetEnableDraw(bool enableDraw);
 	void Draw();
 
 private:
@@ -39,6 +41,7 @@ private:
 	friend class Mesh;
 	Mesh* m_pMesh;
 
+	bool m_enableDraw;
 	bool m_isStatic;
 	XMMATRIX m_localTransform;
 };

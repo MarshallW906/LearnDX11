@@ -62,6 +62,7 @@ Mesh* g_pCylinderMesh;
 UINT g_carBodyIndex = 0;
 UINT g_carWheelsStartIndex = 0; // 0: front-left, 1: front-right, 2: back-left, 3: back-right
 
+UINT g_debugCubeIndexCameraPosFirstView = 0;
 
 // Shader resources
 enum StaticMeshConstantBuffer
@@ -173,16 +174,23 @@ enum class KeyboardMouseEvents
 	EVENT_KEY_S_HELD,
 	// switch camera mode
 	EVENT_KEY_Q_PRESSED,
-	// mouse wheel: zoom in/out
-	//EVENT_MOUSE_WHEEL,
-	//EVENT_MOUSE_MOVEMENT,
+	// mouse
+	EVENT_MOUSE_MOVEMENT,
+	EVENT_MOUSE_WHEEL,
 };
 std::queue<KeyboardMouseEvents> g_eventQueue;
 XMFLOAT2 g_moveByInput;
+bool g_shouldSwitchCameraMode;
+int g_curMouseXPos = 0;
+int g_curMouseYPos = 0;
+int g_prevFrameMouseXPos = 0;
+int g_prevFrameMouseYPos = 0;
 
 
 // Forward declarations
 LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
+void UpdateMousePosRealtime(int xPos, int yPos);
+void OnMousePosChangedPerFrame();
 
 bool LoadAndGenerateBuffers();
 bool ConstructWorld();
@@ -215,18 +223,25 @@ void Update(float deltaTime)
 	DetectKeyboardAndMouseEvents();
 	ProcessEvents();
 
+	if (g_shouldSwitchCameraMode)
+	{
+		g_pCamera->ToggleCameraMode();
+	}
+
 	// view matrix
 	XMVECTOR eyePosition = XMVectorSet(0, 10, -20, 1);
 	XMVECTOR focusPoint = XMVectorSet(0, 0, 0, 1);
 	XMVECTOR upDirection = XMVectorSet(0, 1, 0, 0);
 	//g_ViewMatrix = XMMatrixLookAtLH(eyePosition, focusPoint, upDirection);
-	g_pCamera->SetThirdViewRollPitchYaw(-angle * 10, 0, 0);
+	//g_pCamera->SetThirdViewRollPitchYawInAngles(-angle * 10, 0, 0);
 	g_ViewMatrix = g_pCamera->GetViewMatrix(upDirection);
 
 	// world(model) matrix
 
 	std::vector<MeshInstance*>& cubeInstances = g_pCubeMesh->GetAllInstances();
 	std::vector<MeshInstance*>& cylinderInstances = g_pCylinderMesh->GetAllInstances();
+
+	cubeInstances[g_debugCubeIndexCameraPosFirstView]->UpdateLocalTransform(XMMatrixTranslationFromVector(g_pCamera->DebugGetCameraPosInFirstView()));
 
 	// Car movement
 	{
@@ -266,7 +281,7 @@ void Update(float deltaTime)
 			//pFrontRightWheel->SelfRotate(XMMatrixRotationX(XMConvertToRadians(carWheelRotateSpeed)));
 
 			// TODO: Add util functions like moveForward()
-			XMVECTOR vForward = XMVector3Normalize(carBodyInstance->GetLocalTransform().r[2]);//????????????????????????????????
+			XMVECTOR vForward = XMVector3Normalize(carBodyInstance->GetLocalTransform().r[2]);
 			XMMATRIX translation = XMMatrixTranslationFromVector(vForward * carMoveSpeed * deltaTime * g_moveByInput.y);
 			carBodyInstance->UpdateLocalTransform(
 				carBodyInstance->GetLocalTransform() * translation
@@ -274,6 +289,7 @@ void Update(float deltaTime)
 		}
 	}
 
+	// post-update
 }
 
 void Render()
@@ -574,6 +590,9 @@ bool ConstructWorld()
 	g_pCamera->SetEnableFirstPersonView(false);
 	g_pCamera->SetFollowTarget(refCubeInstances[g_carBodyIndex]);
 	g_pCamera->SetThirdViewFollowDistance(20); // 20 is default value
+	XMMATRIX debugCube = XMMatrixScaling(0.3, 0.3, 0.3);
+	g_debugCubeIndexCameraPosFirstView = g_pCubeMesh->GenerateInstances(&debugCube, 1, false);
+	refCubeInstances[g_debugCubeIndexCameraPosFirstView]->SetEnableDraw(false);
 
 
 	// [OK] NEXT STEP 1: generate some (TODO: static) cube/cylinders as ornaments, put them in the scene
@@ -582,10 +601,11 @@ bool ConstructWorld()
 	// [OK (1/2)](optional) NEXT STEP 3.1: when the car is moving, apply rotation on wheels accordingly 
 	//		     ([Not OK] all wheels: forward/backward; [OK] front wheels: rotate left/right)
 	// NEXT STEP 4: skybox. (cubemap)
-	// NEXT STEP 5.1: camera mode: 1st person view
-	// NEXT STEP 5.2: camera mode: 3rd person view
-	// NEXT STEP 6: camera mode: switch between 1st & 3rd
-	// NEXT STEP 7: camera: mouse movement under 3rd person view: RotateAround
+	// [OK] NEXT STEP 5.1: camera mode: 1st person view
+	// [OK] NEXT STEP 5.2: camera mode: 3rd person view
+	// [OK] NEXT STEP 6: camera mode: switch between 1st & 3rd
+	// [Partially OK, NEXT STEP HERE] NEXT STEP 7: camera: mouse movement under 3rd person view: RotateAround
+	//				  Next: mouse-control rotate around
 	// NEXT STEP 8: camera: mouse wheel under 3rd person view: Zoom In/Out
 	// NEXT STEP 9: shader: light
 	// NEXT STEP 10: Shadow (I dont know how to do that yet)
@@ -741,6 +761,16 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 	{
 		hDC = BeginPaint(hwnd, &paintStruct);
 		EndPaint(hwnd, &paintStruct);
+	}
+	break;
+	case WM_MOUSEMOVE:
+	{
+		int xPos = GET_X_LPARAM(lParam);
+		int yPos = GET_Y_LPARAM(lParam);
+		char buf[50];
+		sprintf_s(buf, "on mouse move: %d, %d\n", xPos, yPos);
+		OutputDebugStringA(buf);
+		UpdateMousePosRealtime(xPos, yPos);
 	}
 	break;
 	case WM_DESTROY:
@@ -1211,35 +1241,42 @@ void GenerateSphereVertexAndIndexBuffer(int LatLines, int LongLines)
 
 void DetectKeyboardAndMouseEvents()
 {
-	if (GetAsyncKeyState('A') & 0x8000)
+	if (GetFocus() == g_WindowHandle)
 	{
-		g_eventQueue.push(KeyboardMouseEvents::EVENT_KEY_A_HELD);
-	}
-	if (GetAsyncKeyState('D') & 0x8000)
-	{
-		g_eventQueue.push(KeyboardMouseEvents::EVENT_KEY_D_HELD);
-	}
-	if (GetAsyncKeyState('W') & 0x8000)
-	{
-		g_eventQueue.push(KeyboardMouseEvents::EVENT_KEY_W_HELD);
-	}
-	if (GetAsyncKeyState('S') & 0x8000)
-	{
-		g_eventQueue.push(KeyboardMouseEvents::EVENT_KEY_S_HELD);
-	}
-	// TODO: https://www.autoitscript.com/autoit3/docs/libfunctions/_WinAPI_GetAsyncKeyState.htm
-	// This 'pressed' is not fully reliable when there is another application
-	// that could have already received the 'pressed' event before
-	// I guess ultimately this will be changed to like "Held for 0.1s"
-	if (GetAsyncKeyState('Q') & 0x01)
-	{
-		g_eventQueue.push(KeyboardMouseEvents::EVENT_KEY_Q_PRESSED);
+		// check mouse position every frame
+		g_eventQueue.push(KeyboardMouseEvents::EVENT_MOUSE_MOVEMENT);
+
+		if (GetAsyncKeyState('A') & 0x8000)
+		{
+			g_eventQueue.push(KeyboardMouseEvents::EVENT_KEY_A_HELD);
+		}
+		if (GetAsyncKeyState('D') & 0x8000)
+		{
+			g_eventQueue.push(KeyboardMouseEvents::EVENT_KEY_D_HELD);
+		}
+		if (GetAsyncKeyState('W') & 0x8000)
+		{
+			g_eventQueue.push(KeyboardMouseEvents::EVENT_KEY_W_HELD);
+		}
+		if (GetAsyncKeyState('S') & 0x8000)
+		{
+			g_eventQueue.push(KeyboardMouseEvents::EVENT_KEY_S_HELD);
+		}
+		// TODO: https://www.autoitscript.com/autoit3/docs/libfunctions/_WinAPI_GetAsyncKeyState.htm
+		// This 'pressed' is not fully reliable when there is another application
+		// that could have already received the 'pressed' event before
+		// I guess ultimately this will be changed to like "Held for 0.1s"
+		if (GetAsyncKeyState('Q') & 0x01)
+		{
+			g_eventQueue.push(KeyboardMouseEvents::EVENT_KEY_Q_PRESSED);
+		}
 	}
 }
 
 void ProcessEvents()
 {
 	g_moveByInput = XMFLOAT2();
+	g_shouldSwitchCameraMode = false;
 
 	while (!g_eventQueue.empty())
 	{
@@ -1265,10 +1302,31 @@ void ProcessEvents()
 		else if (inputEvent == KeyboardMouseEvents::EVENT_KEY_Q_PRESSED)
 		{
 			// TODO: swtich camera mode
+			g_shouldSwitchCameraMode = true;
+		}
+		else if (inputEvent == KeyboardMouseEvents::EVENT_MOUSE_MOVEMENT)
+		{
+			OnMousePosChangedPerFrame();
 		}
 	}
 }
 
+void UpdateMousePosRealtime(int xPos, int yPos)
+{
+	g_curMouseXPos = xPos;
+	g_curMouseYPos = yPos;
+}
+
+void OnMousePosChangedPerFrame()
+{
+	// NEXT STEP HERE
+	static float camRollMax = g_pCamera->GetCamRollMax();
+	static float camRollMin = g_pCamera->GetCamRollMin();
+
+	// not correct
+	//g_pCamera->ApplyMousePos // lets solve it inside the camera because we need different pattern for 1st/3rd view
+	g_pCamera->SetThirdViewRollPitchYawInAngles(-g_curMouseYPos, -g_curMouseXPos, 0);
+}
 
 /*
 struct VertexPosColor

@@ -2,6 +2,7 @@
 
 // System Includes
 #include <Windows.h>
+#include <windowsx.h>
 
 // DX11
 #include <d3d11.h>
