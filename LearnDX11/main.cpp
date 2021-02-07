@@ -11,6 +11,7 @@
 
 #include <queue>
 #include <iostream>
+#include <mutex>
 
 const UINT MAX_NUM_MESH_INSTANCE = 1000;
 
@@ -181,14 +182,17 @@ enum class KeyboardMouseEvents
 std::queue<KeyboardMouseEvents> g_eventQueue;
 XMFLOAT2 g_moveByInput;
 bool g_shouldSwitchCameraMode;
-int g_curMouseXPos = 0;
-int g_curMouseYPos = 0;
-
+int g_realtimeMouseXPos = 0;
+int g_realtimeMouseYPos = 0;
+int g_realtimeWheelDelta = 0;
+std::mutex g_mutexThreadContext;
 
 // Forward declarations
 LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
 void UpdateMousePosRealtime(int xPos, int yPos);
-void OnMousePosChangedPerFrame();
+void OnMousePosChangedPerFrame(float deltaTime);
+void UpdateMouseWheelRealtime(int wheelDelta);
+void OnMouseWheelChangedPerFrame(float deltaTime);
 
 bool LoadAndGenerateBuffers();
 bool ConstructWorld();
@@ -197,7 +201,7 @@ void Clear(const FLOAT clearColor[4], FLOAT clearDepth, UINT8 clearStencil);
 void Present(bool vSync);
 
 void DetectKeyboardAndMouseEvents();
-void ProcessEvents();
+void ProcessEvents(float deltaTime);
 
 void Update(float deltaTime);
 void Render();
@@ -219,7 +223,7 @@ void Update(float deltaTime)
 	float angleRadians = XMConvertToRadians(angle);
 
 	DetectKeyboardAndMouseEvents();
-	ProcessEvents();
+	ProcessEvents(deltaTime);
 
 	if (g_shouldSwitchCameraMode)
 	{
@@ -596,7 +600,7 @@ bool ConstructWorld()
 	// [OK] NEXT STEP 1: generate some (TODO: static) cube/cylinders as ornaments, put them in the scene
 	// [OK] NEXT STEP 2: construct a "car" (4 cylinders under 1 cube), expose references of the "car"'s root, and its two front wheels
 	// [OK] NEXT STEP 3: add keyboard detection, WASD move the car
-	// [OK (1/2)](optional) NEXT STEP 3.1: when the car is moving, apply rotation on wheels accordingly 
+	// [Partially OK (1/2)](optional) NEXT STEP 3.1: when the car is moving, apply rotation on wheels accordingly 
 	//		     ([Not OK] all wheels: forward/backward; [OK] front wheels: rotate left/right)
 	// NEXT STEP 4: skybox. (cubemap)
 	// [OK] NEXT STEP 5.1: camera mode: 1st person view
@@ -604,7 +608,7 @@ bool ConstructWorld()
 	// [OK] NEXT STEP 6: camera mode: switch between 1st & 3rd
 	// [OK] NEXT STEP 7: camera: mouse movement under 3rd person view: RotateAround
 	// [OK]			  Next: mouse-control rotate around
-	// NEXT STEP 8: camera: mouse wheel under 3rd person view: Zoom In/Out
+	// [OK] NEXT STEP 8: camera: mouse wheel under 3rd person view: Zoom In/Out
 	// NEXT STEP 9: shader: light
 	// NEXT STEP 10: Shadow (I dont know how to do that yet)
 	return true;
@@ -640,11 +644,16 @@ int Run()
 	{
 		if (PeekMessage(&msg, 0, 0, 0, PM_REMOVE))
 		{
+			// system thread
+			// we don't acquire the thread context here because only WM_MOUSEWHEEL needs the lock
+			// See UpdateMouseWheelRealtime()
 			TranslateMessage(&msg);
 			DispatchMessage(&msg);
 		}
 		else
 		{
+			g_mutexThreadContext.lock();
+			// game thread
 			DWORD currentTime = timeGetTime();
 			float deltaTime = (currentTime - previousTime);
 			previousTime = currentTime;
@@ -654,6 +663,9 @@ int Run()
 			deltaTime = std::min<float>(deltaTime, maxTimeStep);
 
 			Update(deltaTime);
+			g_mutexThreadContext.unlock();
+
+			// TODO: send Render() to another thread, then switch context between Update() and Render()
 			Render();
 		}
 	}
@@ -765,10 +777,25 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 	{
 		int xPos = GET_X_LPARAM(lParam);
 		int yPos = GET_Y_LPARAM(lParam);
-		char buf[50];
+		/*
+		static char buf[50];
 		sprintf_s(buf, "on mouse move: %d, %d\n", xPos, yPos);
 		OutputDebugStringA(buf);
+		*/
 		UpdateMousePosRealtime(xPos, yPos);
+	}
+	break;
+	case WM_MOUSEWHEEL:
+	{
+		//int xPos = GET_X_LPARAM(lParam);
+		//int yPos = GET_Y_LPARAM(lParam);
+		int zDelta = GET_WHEEL_DELTA_WPARAM(wParam);
+		//int mButtonDown = (GET_KEYSTATE_WPARAM(wParam) & 0x0010); // Mouse Middle Button
+
+		//static char buf[50];
+		//sprintf_s(buf, "on mouse wheel: %d, %d, %d, %d\n", xPos, yPos, zDelta, mButtonDown);
+		//OutputDebugStringA(buf);
+		UpdateMouseWheelRealtime(zDelta);
 	}
 	break;
 	case WM_DESTROY:
@@ -1241,8 +1268,9 @@ void DetectKeyboardAndMouseEvents()
 {
 	if (GetFocus() == g_WindowHandle)
 	{
-		// check mouse position every frame
+		// check mouse states every frame
 		g_eventQueue.push(KeyboardMouseEvents::EVENT_MOUSE_MOVEMENT);
+		g_eventQueue.push(KeyboardMouseEvents::EVENT_MOUSE_WHEEL);
 
 		if (GetAsyncKeyState('A') & 0x8000)
 		{
@@ -1271,7 +1299,7 @@ void DetectKeyboardAndMouseEvents()
 	}
 }
 
-void ProcessEvents()
+void ProcessEvents(float deltaTime)
 {
 	g_moveByInput = XMFLOAT2();
 	g_shouldSwitchCameraMode = false;
@@ -1304,7 +1332,11 @@ void ProcessEvents()
 		}
 		else if (inputEvent == KeyboardMouseEvents::EVENT_MOUSE_MOVEMENT)
 		{
-			OnMousePosChangedPerFrame();
+			OnMousePosChangedPerFrame(deltaTime);
+		}
+		else if (inputEvent == KeyboardMouseEvents::EVENT_MOUSE_WHEEL)
+		{
+			OnMouseWheelChangedPerFrame(deltaTime);
 		}
 	}
 }
@@ -1315,17 +1347,38 @@ void ProcessEvents()
 // so there's no race conditions at all
 void UpdateMousePosRealtime(int xPos, int yPos)
 {
-	g_curMouseXPos = xPos;
-	g_curMouseYPos = yPos;
+	g_realtimeMouseXPos = xPos;
+	g_realtimeMouseYPos = yPos;
 }
 
-void OnMousePosChangedPerFrame()
+// However, we cannot do the same thing on WheelDelta because WndProc doesn't receive WM_MOUSEWHEEL when the wheel is not rotating,
+// which means that it cannot automatically change that value back to zero
+// so we need to accumulate all mouse wheel activities between each frame
+// then send it to Game Thread, where we clear it to zero after we no longer need it
+void UpdateMouseWheelRealtime(int wheelDelta)
+{
+	if (g_mutexThreadContext.try_lock())
+	{
+		g_realtimeWheelDelta += wheelDelta;
+		g_mutexThreadContext.unlock();
+	}
+}
+
+void OnMousePosChangedPerFrame(float deltaTime)
 {
 	// NEXT STEP HERE
-	float xPosNormalized = (float)g_curMouseXPos / g_WindowWidth;
-	float yPosNormalized = (float)g_curMouseYPos / g_WindowHeight;
+	float xPosNormalized = (float)g_realtimeMouseXPos / g_WindowWidth;
+	float yPosNormalized = (float)g_realtimeMouseYPos / g_WindowHeight;
 
 	g_pCamera->ApplyMousePos(xPosNormalized, yPosNormalized);
+}
+
+void OnMouseWheelChangedPerFrame(float deltaTime)
+{
+	float curFrameWheelDelta = g_realtimeWheelDelta;
+	g_pCamera->ApplyMouseWheelDelta(curFrameWheelDelta, deltaTime);
+
+	g_realtimeWheelDelta = 0;
 }
 
 /*

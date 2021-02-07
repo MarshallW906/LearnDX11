@@ -6,6 +6,8 @@ Camera::Camera()
 	: m_isFirstPersonView(false)
 	, m_firstViewFollowLocalPosOffset(XMVectorSet(0, 0.0, 1.0, 0))
 	, m_ThirdViewFollowDistance(20)
+	, m_minFollowDistance(5)
+	, m_maxFollowDistance(40)
 	, m_pFollowMeshInstance(nullptr)
 	, m_camRollInAngle(-60)
 	, m_camPitchInAngle(0)
@@ -13,6 +15,7 @@ Camera::Camera()
 	, m_camRollMax(80)
 	, m_camRollMin(-80)
 	, m_finalPosFirstView(XMVectorSet(0, 10, -20, 1))
+	, m_zoomSpeed(2)
 {
 }
 
@@ -65,6 +68,11 @@ float Camera::GetCamRollMin() const
 	return m_camRollMin;
 }
 
+bool Camera::IsFirstViewMode() const
+{
+	return m_isFirstPersonView;
+}
+
 void Camera::ApplyMousePos(float xPosNormalized, float yPosNormalized)
 {
 	SetViewRollPitchYawInAngles(
@@ -73,7 +81,16 @@ void Camera::ApplyMousePos(float xPosNormalized, float yPosNormalized)
 		-(xPosNormalized - 0.5) * 360, // horizontal
 		0
 	);
+}
 
+void Camera::ApplyMouseWheelDelta(int wheelDelta, float deltaTime)
+{
+	if (!m_isFirstPersonView)
+	{
+		float result = m_ThirdViewFollowDistance + (-wheelDelta) * deltaTime * m_zoomSpeed;
+		result = FuncUtils::SimpleClamp(result, m_minFollowDistance, m_maxFollowDistance);
+		m_ThirdViewFollowDistance = result;
+	}
 }
 
 XMMATRIX Camera::GetViewMatrix(XMVECTOR worldUp)
