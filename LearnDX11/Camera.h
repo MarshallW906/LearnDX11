@@ -10,10 +10,11 @@ public:
 	void ToggleCameraMode();
 	bool SetThirdViewFollowDistance(float distance);
 	void SetFollowTarget(MeshInstance* pTargetMeshInstance);
-	void SetThirdViewRollPitchYawInAngles(float rollAngle, float pitchAngle, float yawAngle);
+	void SetViewRollPitchYawInAngles(float rollAngle, float pitchAngle, float yawAngle);
 	XMVECTOR DebugGetCameraPosInFirstView() const;
 	float GetCamRollMax() const;
 	float GetCamRollMin() const;
+	void ApplyMousePos(float xPosNormalized, float yPosNormalized);
 
 	XMMATRIX GetViewMatrix(XMVECTOR worldUp);
 

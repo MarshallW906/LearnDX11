@@ -183,8 +183,6 @@ XMFLOAT2 g_moveByInput;
 bool g_shouldSwitchCameraMode;
 int g_curMouseXPos = 0;
 int g_curMouseYPos = 0;
-int g_prevFrameMouseXPos = 0;
-int g_prevFrameMouseYPos = 0;
 
 
 // Forward declarations
@@ -233,7 +231,7 @@ void Update(float deltaTime)
 	XMVECTOR focusPoint = XMVectorSet(0, 0, 0, 1);
 	XMVECTOR upDirection = XMVectorSet(0, 1, 0, 0);
 	//g_ViewMatrix = XMMatrixLookAtLH(eyePosition, focusPoint, upDirection);
-	//g_pCamera->SetThirdViewRollPitchYawInAngles(-angle * 10, 0, 0);
+	//g_pCamera->SetViewRollPitchYawInAngles(-angle * 10, 0, 0);
 	g_ViewMatrix = g_pCamera->GetViewMatrix(upDirection);
 
 	// world(model) matrix
@@ -604,8 +602,8 @@ bool ConstructWorld()
 	// [OK] NEXT STEP 5.1: camera mode: 1st person view
 	// [OK] NEXT STEP 5.2: camera mode: 3rd person view
 	// [OK] NEXT STEP 6: camera mode: switch between 1st & 3rd
-	// [Partially OK, NEXT STEP HERE] NEXT STEP 7: camera: mouse movement under 3rd person view: RotateAround
-	//				  Next: mouse-control rotate around
+	// [OK] NEXT STEP 7: camera: mouse movement under 3rd person view: RotateAround
+	// [OK]			  Next: mouse-control rotate around
 	// NEXT STEP 8: camera: mouse wheel under 3rd person view: Zoom In/Out
 	// NEXT STEP 9: shader: light
 	// NEXT STEP 10: Shadow (I dont know how to do that yet)
@@ -1311,6 +1309,10 @@ void ProcessEvents()
 	}
 }
 
+// the g_curMouseX(/Y)Pos are only written by UpdateMousePosRealtime (from WndProc)
+// and only read by OnMousePosChangedPerFrame()
+// and the value change are done only by directly assigning values (like no "+=" calculations which still reads the previous value)
+// so there's no race conditions at all
 void UpdateMousePosRealtime(int xPos, int yPos)
 {
 	g_curMouseXPos = xPos;
@@ -1320,12 +1322,10 @@ void UpdateMousePosRealtime(int xPos, int yPos)
 void OnMousePosChangedPerFrame()
 {
 	// NEXT STEP HERE
-	static float camRollMax = g_pCamera->GetCamRollMax();
-	static float camRollMin = g_pCamera->GetCamRollMin();
+	float xPosNormalized = (float)g_curMouseXPos / g_WindowWidth;
+	float yPosNormalized = (float)g_curMouseYPos / g_WindowHeight;
 
-	// not correct
-	//g_pCamera->ApplyMousePos // lets solve it inside the camera because we need different pattern for 1st/3rd view
-	g_pCamera->SetThirdViewRollPitchYawInAngles(-g_curMouseYPos, -g_curMouseXPos, 0);
+	g_pCamera->ApplyMousePos(xPosNormalized, yPosNormalized);
 }
 
 /*
