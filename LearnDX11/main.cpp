@@ -162,7 +162,6 @@ std::vector<VertexPosTexcoord> g_CylinderVerticesTexcoord;
 std::vector<WORD> g_CylinderIndices;
 
 // skybox
-UINT GenerateSphereVertexAndIndexBuffer(int LatLines, int LongLines);
 VSPSShader* g_pSkyboxShader = nullptr;
 
 // input events
@@ -188,6 +187,7 @@ std::mutex g_mutexThreadContext;
 
 // Forward declarations
 LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
+DXGI_RATIONAL QueryRefreshRate(UINT screenWidth, UINT screenHeight, BOOL vsync);
 void UpdateMousePosRealtime(int xPos, int yPos);
 void OnMousePosChangedPerFrame(float deltaTime);
 void UpdateMouseWheelRealtime(int wheelDelta);
