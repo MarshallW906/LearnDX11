@@ -39,7 +39,7 @@ const XMMATRIX& MeshInstance::GetParentTransform() const
 
 XMMATRIX MeshInstance::GetWorldTransform()
 {
-	return m_worldTransform = m_localTransform * GetParentTransform();
+	return m_localTransform * GetParentTransform();
 }
 
 void MeshInstance::UpdateLocalTransform(XMMATRIX newLocalTransform)
@@ -94,7 +94,7 @@ void MeshInstance::DrawSelf()
 	// draw all static instances
 	m_pMesh->BindVertexAndIndexBuffers();
 	//m_pGameContext->m_d3dDeviceContext->UpdateSubresource(m_pGameContext->m_constantBufferAllMeshPositions, 0, nullptr, &staticTransforms[0], 0, 0);
-	GetWorldTransform();
-	m_pGameContext->m_d3dDeviceContext->UpdateSubresource(m_pGameContext->m_CBSingleWorldMatrix, 0, nullptr, &m_worldTransform, 0, 0);
+	XMMATRIX worldTransform = GetWorldTransform();
+	m_pGameContext->m_d3dDeviceContext->UpdateSubresource(m_pGameContext->m_CBSingleWorldMatrix, 0, nullptr, &worldTransform, 0, 0);
 	m_pGameContext->m_d3dDeviceContext->DrawIndexedInstanced(m_pMesh->m_indexCount, 1, 0, 0, 0);
 }

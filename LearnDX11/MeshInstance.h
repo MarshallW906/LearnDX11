@@ -48,6 +48,5 @@ private:
 	bool m_drawnIndividually;
 	bool m_isStatic;
 	XMMATRIX m_localTransform;
-	XMMATRIX m_worldTransform;
 };
 
