@@ -612,6 +612,7 @@ bool ConstructWorld()
 	// [OK] NEXT STEP 6: camera mode: switch between 1st & 3rd
 	// [OK] NEXT STEP 7: camera: mouse movement under 3rd person view: RotateAround
 	// [OK]			  Next: mouse-control rotate around
+	// [Known issue]: When camera rotates, ONLY the car followed get sheared
 	// [OK] NEXT STEP 8: camera: mouse wheel under 3rd person view: Zoom In/Out
 	// NEXT STEP 9: shader: light
 	// NEXT STEP 10: Shadow (I dont know how to do that yet)

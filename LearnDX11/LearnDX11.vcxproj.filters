@@ -27,9 +27,6 @@
     <ClCompile Include="GameContextD3D11.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="WICTextureLoader.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="VSPSShader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -54,9 +51,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="resource.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="WICTextureLoader.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="VSPSShader.h">
@@ -90,5 +84,8 @@
     <ResourceCompile Include="LearnDX11.rc">
       <Filter>Resource Files</Filter>
     </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
   </ItemGroup>
 </Project>
