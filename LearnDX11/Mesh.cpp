@@ -48,7 +48,7 @@ void Mesh::DrawAllInstances()
 	{
 		// TODO: draw static/non-static meshes separatedly
 		//if ((*it)->IsStatic())
-		if ((*it)->IsEnableDraw())
+		if ((*it)->IsEnableDraw() && !(*it)->IsDrawnIndividually())
 		{
 			m_pAllInstanceTransforms->wTransforms[staticInstanceCount] = (*it)->GetWorldTransform();
 			//staticTransforms.push_back((*it)->GetCurrentFinalTransform());

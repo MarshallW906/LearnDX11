@@ -10,14 +10,9 @@ cbuffer PerFrame //: register(b1)
 {
 	matrix viewMatrix;
 }
-/*
-cbuffer PerObject : register(b2)
-{
-	matrix worldMatrix;
-}
-*/
+
 cbuffer PerInstance
-{
+{ 
 	matrix worldMatrix[MAX_NUM_MESH_INSTANCE];
 }
 
@@ -40,8 +35,8 @@ VS_Output StaticMesh_VS(AppData IN, uint instanceID : SV_InstanceID)
 	VS_Output OUT;
 	float3 pos = IN.position;
 
-	matrix mvp = mul(projectionMatrix, mul(viewMatrix, worldMatrix[instanceID]));
-	OUT.position = mul(mvp, float4 (pos, 1.0f));
+	matrix wvp = mul(projectionMatrix, mul(viewMatrix, worldMatrix[instanceID]));
+	OUT.position = mul(wvp, float4 (pos, 1.0f));
 	OUT.texcoord = IN.texcoord;
 
 	return OUT;

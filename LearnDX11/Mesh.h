@@ -47,5 +47,7 @@ private:
 
 	CBWorldMatrices* m_pAllInstanceTransforms;
 	std::vector<MeshInstance*> m_MeshInstances;
+
+	friend class MeshInstance;
 };
 

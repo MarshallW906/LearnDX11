@@ -93,6 +93,11 @@ void Camera::ApplyMouseWheelDelta(int wheelDelta, float deltaTime)
 	}
 }
 
+XMVECTOR Camera::GetCurrentPosition() const
+{
+	return m_currentPosition;
+}
+
 XMMATRIX Camera::GetViewMatrix(XMVECTOR worldUp)
 {
 	if (!m_pFollowMeshInstance)
@@ -131,5 +136,7 @@ XMMATRIX Camera::GetViewMatrix(XMVECTOR worldUp)
 		eyePosition = XMVectorAdd(viewFocusPoint, followOffset);
 		
 	}
+
+	m_currentPosition = eyePosition;
 	return XMMatrixLookAtLH(eyePosition, viewFocusPoint, worldUp);
 }

@@ -6,8 +6,8 @@ void GameContextD3D11::Release()
 	SafeRelease(m_d3dDepthStencilView);
 	SafeRelease(m_d3dRenderTargetView);
 	SafeRelease(m_d3dDepthStencilBuffer);
-	SafeRelease(m_d3dDepthStencilState);
-	SafeRelease(m_d3dRasterizerState);
+	SafeRelease(m_d3dDepthStencilStateDefault);
+	SafeRelease(m_d3dRasterizerStateDefault);
 	SafeRelease(m_d3dSwapChain);
 	SafeRelease(m_d3dDeviceContext);
 	SafeRelease(m_d3dDevice);

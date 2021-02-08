@@ -19,7 +19,7 @@ public:
 	const XMMATRIX& GetLocalTransform() const;
 	const XMFLOAT3 GetLocalPos() const;
 	const XMMATRIX& GetParentTransform() const;
-	XMMATRIX GetWorldTransform() const;
+	XMMATRIX GetWorldTransform();
 	void UpdateLocalTransform(XMMATRIX newLocalTransform);
 
 	// TODO: SelfRotateRelativelyFromQuat(Quat), this function may need re-writing
@@ -29,8 +29,11 @@ public:
 	void SetParentMeshInstance(MeshInstance* pParentMeshInstance);
 
 	bool IsEnableDraw() const;
+	bool IsDrawnIndividually() const;
 	void SetEnableDraw(bool enableDraw);
-	void Draw();
+	void SetDrawnIndividually(bool drawnIndividually);
+
+	void DrawSelf();
 
 private:
 
@@ -42,7 +45,9 @@ private:
 	Mesh* m_pMesh;
 
 	bool m_enableDraw;
+	bool m_drawnIndividually;
 	bool m_isStatic;
 	XMMATRIX m_localTransform;
+	XMMATRIX m_worldTransform;
 };
 

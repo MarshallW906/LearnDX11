@@ -22,12 +22,15 @@ struct GameContextD3D11
 	ID3D11Texture2D* m_d3dDepthStencilBuffer = nullptr;
 
 	// Define the functionality of the depth/stencil stages
-	ID3D11DepthStencilState* m_d3dDepthStencilState = nullptr;
+	ID3D11DepthStencilState* m_d3dDepthStencilStateDefault = nullptr;
+	ID3D11DepthStencilState* m_d3dDepthStencilStateLessEqual = nullptr;
 	// Define the functionality of the rasterizer stage
-	ID3D11RasterizerState* m_d3dRasterizerState = nullptr;
+	ID3D11RasterizerState* m_d3dRasterizerStateDefault = nullptr;
+	ID3D11RasterizerState* m_d3dRasterizerStateCullNone = nullptr;
 	D3D11_VIEWPORT m_Viewport = { 0 };
 
 	ID3D11Buffer* m_constantBufferAllMeshPositions = nullptr;
+	ID3D11Buffer* m_CBSingleWorldMatrix = nullptr;
 
 	ID3D11Device* const getDevice() const;
 	ID3D11DeviceContext* const getDeviceContext() const;

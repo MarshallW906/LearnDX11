@@ -33,35 +33,34 @@ GameContextD3D11* g_pGameContextD3D11;
 
 // vertex/index buffer
 ID3D11Buffer* g_CubeVertexTexcoordBuffer = nullptr;
-ID3D11Buffer* g_d3dIndexBuffer = nullptr;
+ID3D11Buffer* g_CubeIndexBuffer = nullptr;
 
 ID3D11Buffer* g_CylinderVertexTexcoordBuffer = nullptr;
 ID3D11Buffer* g_CylinderIndexBuffer = nullptr;
 
-ID3D11Buffer* g_SphereVertexBuffer = nullptr;
-ID3D11Buffer* g_SphereIndexBuffer = nullptr;
-
 // textures
-ID3D11Texture2D* g_pTexture2D = nullptr;
-ID3D11Resource* g_pTexture2DResource = nullptr;
-ID3D11ShaderResourceView* g_pShaderResourceView = nullptr;
+ID3D11Resource* g_pCubeTexture2DResource = nullptr;
+ID3D11ShaderResourceView* g_pCubeShaderResourceView = nullptr;
 
-ID3D11Texture2D* g_pTexture2D_2 = nullptr;
-ID3D11Resource* g_pTexture2DResource_2 = nullptr;
-ID3D11ShaderResourceView* g_pShaderResourceView_2 = nullptr;
+ID3D11Resource* g_pCylinderTexture2DResource = nullptr;
+ID3D11ShaderResourceView* g_pCylinderShaderResourceView = nullptr;
+
+ID3D11Resource* g_pSkyboxTextureResource = nullptr;
+ID3D11ShaderResourceView* g_pSkyboxShaderResourceView = nullptr;
 
 ID3D11SamplerState* g_pSamplerState = nullptr;
 
 Camera* g_pCamera;
 
 // Shader data
-VSPSShader* g_VSPSShader = nullptr;
+VSPSShader* g_pShaderSimpleStaticMesh = nullptr;
 
 Mesh* g_pCubeMesh;
 Mesh* g_pCylinderMesh;
 
 UINT g_carBodyIndex = 0;
 UINT g_carWheelsStartIndex = 0; // 0: front-left, 1: front-right, 2: back-left, 3: back-right
+UINT g_skyboxIndex = 0;
 
 UINT g_debugCubeIndexCameraPosFirstView = 0;
 
@@ -73,8 +72,7 @@ enum CBStaticMesh
 	NumCBStaticMesh,
 };
 
-ID3D11Buffer* g_d3dCBStaticMesh[CBStaticMesh::NumCBStaticMesh];
-
+ID3D11Buffer* g_CBStaticMesh[CBStaticMesh::NumCBStaticMesh];
 
 XMMATRIX g_ViewMatrix;
 XMMATRIX g_ProjectionMatrix;
@@ -90,6 +88,7 @@ struct VertexPosTexcoord
 	XMFLOAT2 TexCoord;
 };
 
+UINT VertexPosStride = sizeof(Vertex);
 UINT VertexPosTexcoordStride = sizeof(VertexPosTexcoord);
 UINT offset = 0;
 
@@ -163,7 +162,7 @@ std::vector<VertexPosTexcoord> g_CylinderVerticesTexcoord;
 std::vector<WORD> g_CylinderIndices;
 
 // skybox
-void GenerateSphereVertexAndIndexBuffer(int LatLines, int LongLines);
+UINT GenerateSphereVertexAndIndexBuffer(int LatLines, int LongLines);
 VSPSShader* g_pSkyboxShader = nullptr;
 
 // input events
@@ -232,14 +231,20 @@ void Update(float deltaTime)
 
 	// view matrix
 	XMVECTOR upDirection = XMVectorSet(0, 1, 0, 0);
-	//g_ViewMatrix = XMMatrixLookAtLH(eyePosition, focusPoint, upDirection);
-	//g_pCamera->SetViewRollPitchYawInAngles(-angle * 10, 0, 0);
 	g_ViewMatrix = g_pCamera->GetViewMatrix(upDirection);
 
 	// world(model) matrix
-
 	std::vector<MeshInstance*>& cubeInstances = g_pCubeMesh->GetAllInstances();
 	std::vector<MeshInstance*>& cylinderInstances = g_pCylinderMesh->GetAllInstances();
+
+	// keep skybox centered around camera
+	static XMMATRIX skyboxScale = XMMatrixIdentity();// XMMatrixScaling(1, 1, 1);
+	XMVECTOR curCamPos = g_pCamera->GetCurrentPosition();
+	cubeInstances[g_skyboxIndex]->UpdateLocalTransform(
+		skyboxScale * XMMatrixTranslation(
+			XMVectorGetX(curCamPos), XMVectorGetY(curCamPos), XMVectorGetZ(curCamPos)
+		)
+	);
 
 	cubeInstances[g_debugCubeIndexCameraPosFirstView]->UpdateLocalTransform(XMMatrixTranslationFromVector(g_pCamera->DebugGetCameraPosInFirstView()));
 
@@ -302,36 +307,42 @@ void Render()
 	Clear(Colors::CornflowerBlue, 1.0f, 0);
 
 	// Refresh constant buffer resources with the new data (which is the data updated from Update())
-	g_pGameContextD3D11->m_d3dDeviceContext->UpdateSubresource(g_d3dCBStaticMesh[CBStaticMesh::CB_Frame], 0, nullptr, &g_ViewMatrix, 0, 0);
+	g_pGameContextD3D11->m_d3dDeviceContext->UpdateSubresource(g_CBStaticMesh[CBStaticMesh::CB_Frame], 0, nullptr, &g_ViewMatrix, 0, 0);
 
-	// D3D11 Pipeline: RS: rasterizer stage
-	g_pGameContextD3D11->m_d3dDeviceContext->RSSetState(g_pGameContextD3D11->m_d3dRasterizerState);
-	g_pGameContextD3D11->m_d3dDeviceContext->RSSetViewports(1, &g_pGameContextD3D11->m_Viewport);
-
-	// D3D11 Pipeline: OM: output merger stage
-	// we may have multiple stencils and targets if we have addtional vertex and pixel shaders
-	//    that generate textures like shadow maps, height maps, or other sampling techniques
-	// in this case, as the code is, we will need to choose appropriate rendering target(s) set
-	//    BEFORE we call a draw function.
+	// common settings
 	g_pGameContextD3D11->m_d3dDeviceContext->OMSetRenderTargets(1, &g_pGameContextD3D11->m_d3dRenderTargetView, g_pGameContextD3D11->m_d3dDepthStencilView);
-	g_pGameContextD3D11->m_d3dDeviceContext->OMSetDepthStencilState(g_pGameContextD3D11->m_d3dDepthStencilState, 1);
+	g_pGameContextD3D11->m_d3dDeviceContext->RSSetViewports(1, &g_pGameContextD3D11->m_Viewport);
+	g_pGameContextD3D11->m_d3dDeviceContext->VSSetConstantBuffers(0, CBStaticMesh::NumCBStaticMesh, g_CBStaticMesh);
+	g_pGameContextD3D11->getDeviceContext()->PSSetSamplers(0, 1, &g_pSamplerState);
 
-	// ====================================================
-	// D3D11 Pipeline: IA: input assembler stage
-	// D3D11 Pipeline: VS: vertex shader stage
-	g_pGameContextD3D11->m_d3dDeviceContext->VSSetConstantBuffers(0, CBStaticMesh::NumCBStaticMesh, g_d3dCBStaticMesh);
+	// draw skybox first
+	g_pGameContextD3D11->getDeviceContext()->RSSetState(g_pGameContextD3D11->m_d3dRasterizerStateCullNone);
+	g_pGameContextD3D11->getDeviceContext()->OMSetDepthStencilState(g_pGameContextD3D11->m_d3dDepthStencilStateLessEqual, 1);
+
+	g_pGameContextD3D11->m_d3dDeviceContext->VSSetConstantBuffers(CBStaticMesh::NumCBStaticMesh, 1, &g_pGameContextD3D11->m_CBSingleWorldMatrix);
+
+	g_pSkyboxShader->BindShaderAndLayout();
+	g_pGameContextD3D11->getDeviceContext()->PSSetShaderResources(0, 1, &g_pSkyboxShaderResourceView);
+	std::vector<MeshInstance*>& refCubeInstances = g_pCubeMesh->GetAllInstances();
+	refCubeInstances[g_skyboxIndex]->DrawSelf();
+
+	// =====================================
+
+	// then all other objects
+	g_pGameContextD3D11->m_d3dDeviceContext->RSSetState(g_pGameContextD3D11->m_d3dRasterizerStateDefault);
+	g_pGameContextD3D11->m_d3dDeviceContext->OMSetDepthStencilState(g_pGameContextD3D11->m_d3dDepthStencilStateDefault, 1);
+
 	g_pGameContextD3D11->m_d3dDeviceContext->VSSetConstantBuffers(CBStaticMesh::NumCBStaticMesh, 1, &g_pGameContextD3D11->m_constantBufferAllMeshPositions);
-	g_VSPSShader->BindShaderAndLayout();
 
-	// D3D11 Pipeline: PS: pixel shader stage
-	g_pGameContextD3D11->m_d3dDeviceContext->PSSetSamplers(0, 1, &g_pSamplerState);
+	g_pShaderSimpleStaticMesh->BindShaderAndLayout();
 
-	g_pGameContextD3D11->m_d3dDeviceContext->PSSetShaderResources(0, 1, &g_pShaderResourceView);
+	g_pGameContextD3D11->m_d3dDeviceContext->PSSetShaderResources(0, 1, &g_pCubeShaderResourceView);
 	g_pCubeMesh->DrawAllInstances();
 
-	g_pGameContextD3D11->m_d3dDeviceContext->PSSetShaderResources(0, 1, &g_pShaderResourceView_2);
+	g_pGameContextD3D11->m_d3dDeviceContext->PSSetShaderResources(0, 1, &g_pCylinderShaderResourceView);
 	g_pCylinderMesh->DrawAllInstances();
-
+	
+	//
 
 	Present(g_EnableVSync);
 }
@@ -351,7 +362,7 @@ bool LoadAndGenerateBuffers()
 		indexBufferDesc2.MiscFlags = 0;
 		D3D11_SUBRESOURCE_DATA resourceData2;
 		resourceData2.pSysMem = g_CubeIndicesTexcoord;
-		HRESULT hr = g_pGameContextD3D11->m_d3dDevice->CreateBuffer(&indexBufferDesc2, &resourceData2, &g_d3dIndexBuffer);
+		HRESULT hr = g_pGameContextD3D11->m_d3dDevice->CreateBuffer(&indexBufferDesc2, &resourceData2, &g_CubeIndexBuffer);
 		if (FAILED(hr))
 		{
 			return false;
@@ -406,7 +417,6 @@ bool LoadAndGenerateBuffers()
 		}
 	}
 
-	GenerateSphereVertexAndIndexBuffer(10, 10);
 	// skybox shader
 	{
 		
@@ -417,30 +427,21 @@ bool LoadAndGenerateBuffers()
 		};
 
 		g_pSkyboxShader->LoadAndCompileShaderWithInputLayout(
-			L"../Shaders/Skymap_VSPS.hlsl", "SKYMAP_VS", "vs_4_0",
-			L"../Shaders/Skymap_VSPS.hlsl", "SKYMAP_PS", "ps_4_0",
+			L"../Shaders/Skymap_VS.hlsl", "SKYMAP_VS", "vs_4_0",
+			L"../Shaders/Skymap_PS.hlsl", "SKYMAP_PS", "ps_4_0",
 			skyboxLayoutDesc, _countof(skyboxLayoutDesc)
 		);
 	}
 
-	// load texture from a file
+	// load image texture from a file
 	{
 		HRESULT hr = CreateWICTextureFromFile(
 			g_pGameContextD3D11->m_d3dDevice,
 			g_pGameContextD3D11->m_d3dDeviceContext,
 			L"../Textures/brickwall.jpg",
-			&g_pTexture2DResource,
-			&g_pShaderResourceView
+			&g_pCubeTexture2DResource,
+			&g_pCubeShaderResourceView
 		);
-		if (FAILED(hr))
-		{
-			return false;
-		}
-
-		// also here we can use 
-		// g_pTexture2DResource->GetType(D3D11_RESOURCE_DIMENSION*)
-		// to get the type during runtime if we do not know what exactly the type is
-		hr = g_pTexture2DResource->QueryInterface(IID_ID3D11Texture2D, (void**)&g_pTexture2D);
 		if (FAILED(hr))
 		{
 			return false;
@@ -450,22 +451,22 @@ bool LoadAndGenerateBuffers()
 			g_pGameContextD3D11->m_d3dDevice,
 			g_pGameContextD3D11->m_d3dDeviceContext,
 			L"../Textures/crate2_h2.png",
-			&g_pTexture2DResource_2,
-			&g_pShaderResourceView_2
+			&g_pCylinderTexture2DResource,
+			&g_pCylinderShaderResourceView
 		);
 		if (FAILED(hr))
 		{
 			return false;
 		}
 
-		// also here we can use 
-		// g_pTexture2DResource->GetType(D3D11_RESOURCE_DIMENSION*)
-		// to get the type during runtime if we do not know what exactly the type is
-		hr = g_pTexture2DResource_2->QueryInterface(IID_ID3D11Texture2D, (void**)&g_pTexture2D_2);
-		if (FAILED(hr))
-		{
-			return false;
-		}
+		hr = CreateWICTextureFromFile(
+			g_pGameContextD3D11->m_d3dDevice,
+			g_pGameContextD3D11->m_d3dDeviceContext,
+			L"../Textures/skybox/top.jpg",
+			&g_pSkyboxTextureResource,
+			&g_pSkyboxShaderResourceView
+		);
+
 
 		D3D11_SAMPLER_DESC samplerDesc;
 		ZeroMemory(&samplerDesc, sizeof(samplerDesc));
@@ -495,13 +496,19 @@ bool LoadAndGenerateBuffers()
 		constantBufferDesc.CPUAccessFlags = 0;
 		constantBufferDesc.Usage = D3D11_USAGE_DEFAULT;
 
-		HRESULT hr = g_pGameContextD3D11->m_d3dDevice->CreateBuffer(&constantBufferDesc, nullptr, &g_d3dCBStaticMesh[CBStaticMesh::CB_Application]);
+		HRESULT hr = g_pGameContextD3D11->m_d3dDevice->CreateBuffer(&constantBufferDesc, nullptr, &g_CBStaticMesh[CBStaticMesh::CB_Application]);
 		if (FAILED(hr))
 		{
 			return false;
 		}
 
-		hr = g_pGameContextD3D11->m_d3dDevice->CreateBuffer(&constantBufferDesc, nullptr, &g_d3dCBStaticMesh[CBStaticMesh::CB_Frame]);
+		hr = g_pGameContextD3D11->m_d3dDevice->CreateBuffer(&constantBufferDesc, nullptr, &g_CBStaticMesh[CBStaticMesh::CB_Frame]);
+		if (FAILED(hr))
+		{
+			return false;
+		}
+
+		hr = g_pGameContextD3D11->m_d3dDevice->CreateBuffer(&constantBufferDesc, nullptr, &g_pGameContextD3D11->m_CBSingleWorldMatrix);
 		if (FAILED(hr))
 		{
 			return false;
@@ -524,8 +531,8 @@ bool LoadAndGenerateBuffers()
 			//{ "COLOR", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, offsetof(VertexPosColor,Color), D3D11_INPUT_PER_VERTEX_DATA, 0 }
 			{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, offsetof(VertexPosTexcoord, TexCoord), D3D11_INPUT_PER_VERTEX_DATA, 0 }
 		};
-		g_VSPSShader = new VSPSShader(g_pGameContextD3D11);
-		g_VSPSShader->LoadAndCompileShaderWithInputLayout(
+		g_pShaderSimpleStaticMesh = new VSPSShader(g_pGameContextD3D11);
+		g_pShaderSimpleStaticMesh->LoadAndCompileShaderWithInputLayout(
 			L"../Shaders/StaticMesh_VS.hlsl", "StaticMesh_VS", "latest",
 			L"../Shaders/StaticMesh_PS.hlsl", "StaticMesh_PS", "latest",
 			vertexLayoutDesc, _countof(vertexLayoutDesc));
@@ -541,7 +548,7 @@ bool LoadAndGenerateBuffers()
 		float clientHeight = static_cast<float>(clientRect.bottom - clientRect.top);
 
 		g_ProjectionMatrix = XMMatrixPerspectiveFovLH(XMConvertToRadians(45.0f), clientWidth / clientHeight, 0.1f, 100.0f);
-		g_pGameContextD3D11->m_d3dDeviceContext->UpdateSubresource(g_d3dCBStaticMesh[CBStaticMesh::CB_Application], 0, nullptr, &g_ProjectionMatrix, 0, 0);
+		g_pGameContextD3D11->m_d3dDeviceContext->UpdateSubresource(g_CBStaticMesh[CBStaticMesh::CB_Application], 0, nullptr, &g_ProjectionMatrix, 0, 0);
 	}
 
 	ConstructWorld();
@@ -552,7 +559,7 @@ bool ConstructWorld()
 {
 	// create Cube & Cylinder Mesh
 	g_pCubeMesh = new Mesh(g_pGameContextD3D11, &g_CubeVertexTexcoordBuffer, 1, &VertexPosTexcoordStride, &offset,
-		g_d3dIndexBuffer, _countof(g_CubeIndicesTexcoord), DXGI_FORMAT_R16_UINT, offset);
+		g_CubeIndexBuffer, _countof(g_CubeIndicesTexcoord), DXGI_FORMAT_R16_UINT, offset);
 
 	g_pCylinderMesh = new Mesh(g_pGameContextD3D11,
 		&g_CylinderVertexTexcoordBuffer, 1, &VertexPosTexcoordStride, &offset,
@@ -560,6 +567,10 @@ bool ConstructWorld()
 
 	std::vector<MeshInstance*>& refCubeInstances = g_pCubeMesh->GetAllInstances();
 	std::vector<MeshInstance*>& refCylinderInstances = g_pCylinderMesh->GetAllInstances();
+
+	XMMATRIX skyboxTransform = XMMatrixScaling(500, 500, 500);
+	g_skyboxIndex = g_pCubeMesh->GenerateInstances(&skyboxTransform, 1, false);
+	refCubeInstances[g_skyboxIndex]->SetDrawnIndividually(true);
 
 	// generate some ornaments
 	XMMATRIX cubeOrnaments[] = {
@@ -621,10 +632,23 @@ bool ConstructWorld()
 
 void UnloadContent()
 {
-	SafeRelease(g_d3dCBStaticMesh[CBStaticMesh::CB_Application]);
-	SafeRelease(g_d3dCBStaticMesh[CBStaticMesh::CB_Frame]);
+	SafeRelease(g_CBStaticMesh[CBStaticMesh::CB_Application]);
+	SafeRelease(g_CBStaticMesh[CBStaticMesh::CB_Frame]);
+	SafeRelease(g_CubeVertexTexcoordBuffer);
+	SafeRelease(g_CubeIndexBuffer);
+	SafeRelease(g_CylinderVertexTexcoordBuffer);
+	SafeRelease(g_CylinderIndexBuffer);
 
-	delete(g_VSPSShader);
+	SafeRelease(g_pCubeTexture2DResource);
+	SafeRelease(g_pCylinderTexture2DResource);
+	SafeRelease(g_pCubeShaderResourceView);
+	SafeRelease(g_pCylinderShaderResourceView);
+	SafeRelease(g_pSkyboxTextureResource);
+	SafeRelease(g_pSkyboxShaderResourceView);
+
+	delete(g_pShaderSimpleStaticMesh);
+	delete(g_pSkyboxShader);
+
 	delete(g_pCubeMesh);
 	delete(g_pCylinderMesh);
 	delete(g_pCamera);
@@ -990,7 +1014,14 @@ int InitDirectX(HINSTANCE hInstance, BOOL vSync)
 	depthStencilStateDesc.DepthFunc = D3D11_COMPARISON_LESS;
 	depthStencilStateDesc.StencilEnable = FALSE;
 
-	hr = g_pGameContextD3D11->m_d3dDevice->CreateDepthStencilState(&depthStencilStateDesc, &g_pGameContextD3D11->m_d3dDepthStencilState);
+	hr = g_pGameContextD3D11->m_d3dDevice->CreateDepthStencilState(&depthStencilStateDesc, &g_pGameContextD3D11->m_d3dDepthStencilStateDefault);
+	if (FAILED(hr))
+	{
+		return -1;
+	}
+
+	depthStencilStateDesc.DepthFunc = D3D11_COMPARISON_LESS_EQUAL;
+	hr = g_pGameContextD3D11->m_d3dDevice->CreateDepthStencilState(&depthStencilStateDesc, &g_pGameContextD3D11->m_d3dDepthStencilStateLessEqual);
 	if (FAILED(hr))
 	{
 		return -1;
@@ -1013,7 +1044,14 @@ int InitDirectX(HINSTANCE hInstance, BOOL vSync)
 	rasterizerDesc.SlopeScaledDepthBias = 0.0f;
 
 	// create the rasterizer state object
-	hr = g_pGameContextD3D11->m_d3dDevice->CreateRasterizerState(&rasterizerDesc, &g_pGameContextD3D11->m_d3dRasterizerState);
+	hr = g_pGameContextD3D11->m_d3dDevice->CreateRasterizerState(&rasterizerDesc, &g_pGameContextD3D11->m_d3dRasterizerStateDefault);
+	if (FAILED(hr))
+	{
+		return -1;
+	}
+
+	rasterizerDesc.CullMode = D3D11_CULL_NONE;
+	hr = g_pGameContextD3D11->m_d3dDevice->CreateRasterizerState(&rasterizerDesc, &g_pGameContextD3D11->m_d3dRasterizerStateCullNone);
 	if (FAILED(hr))
 	{
 		return -1;
@@ -1152,129 +1190,6 @@ void GenerateCylinderVerticesAndTexcoords(float radius, float height, unsigned i
 		g_CylinderIndices.push_back(i == numPolygonSides ? 1 : i + 1);
 		g_CylinderIndices.push_back(i == numPolygonSides ? (topFaceIndexOffset + 1) : (topFaceIndexOffset + i + 1));
 	}
-}
-
-void GenerateSphereVertexAndIndexBuffer(int LatLines, int LongLines)
-{
-	UINT NumSphereVertices = ((LatLines - 2) * LongLines) + 2;
-	UINT NumSphereFaces = ((LatLines - 3) * (LongLines) * 2) + (LongLines * 2);
-
-	float sphereYaw = 0.0f;
-	float spherePitch = 0.0f;
-
-	std::vector<Vertex> vertices(NumSphereVertices);
-
-	XMVECTOR currVertPos = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
-
-	vertices[0].Position.x = 0.0f;
-	vertices[0].Position.y = 0.0f;
-	vertices[0].Position.z = 1.0f;
-
-	for (DWORD i = 0; i < LatLines - 2; ++i)
-	{
-		spherePitch = (i + 1) * (3.14 / (LatLines - 1));
-		XMMATRIX Rotationx = XMMatrixRotationX(spherePitch);
-		for (DWORD j = 0; j < LongLines; ++j)
-		{
-			sphereYaw = j * (6.28 / (LongLines));
-			XMMATRIX Rotationy = XMMatrixRotationZ(sphereYaw);
-			currVertPos = XMVector3TransformNormal(XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f), (Rotationx * Rotationy));
-			currVertPos = XMVector3Normalize(currVertPos);
-			vertices[i * LongLines + j + 1].Position.x = XMVectorGetX(currVertPos);
-			vertices[i * LongLines + j + 1].Position.y = XMVectorGetY(currVertPos);
-			vertices[i * LongLines + j + 1].Position.z = XMVectorGetZ(currVertPos);
-		}
-	}
-
-	vertices[NumSphereVertices - 1].Position.x = 0.0f;
-	vertices[NumSphereVertices - 1].Position.y = 0.0f;
-	vertices[NumSphereVertices - 1].Position.z = -1.0f;
-
-
-	D3D11_BUFFER_DESC vertexBufferDesc;
-	ZeroMemory(&vertexBufferDesc, sizeof(vertexBufferDesc));
-
-	vertexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
-	vertexBufferDesc.ByteWidth = sizeof(Vertex) * NumSphereVertices;
-	vertexBufferDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-	vertexBufferDesc.CPUAccessFlags = 0;
-	vertexBufferDesc.MiscFlags = 0;
-
-	D3D11_SUBRESOURCE_DATA vertexBufferData;
-
-	ZeroMemory(&vertexBufferData, sizeof(vertexBufferData));
-	vertexBufferData.pSysMem = &vertices[0];
-	HRESULT hr = g_pGameContextD3D11->getDevice()->CreateBuffer(&vertexBufferDesc, &vertexBufferData, &g_SphereVertexBuffer);
-
-
-	std::vector<DWORD> indices(NumSphereFaces * 3);
-
-	int k = 0;
-	for (DWORD l = 0; l < LongLines - 1; ++l)
-	{
-		indices[k] = 0;
-		indices[k + 1] = l + 1;
-		indices[k + 2] = l + 2;
-		k += 3;
-	}
-
-	indices[k] = 0;
-	indices[k + 1] = LongLines;
-	indices[k + 2] = 1;
-	k += 3;
-
-	for (DWORD i = 0; i < LatLines - 3; ++i)
-	{
-		for (DWORD j = 0; j < LongLines - 1; ++j)
-		{
-			indices[k] = i * LongLines + j + 1;
-			indices[k + 1] = i * LongLines + j + 2;
-			indices[k + 2] = (i + 1) * LongLines + j + 1;
-
-			indices[k + 3] = (i + 1) * LongLines + j + 1;
-			indices[k + 4] = i * LongLines + j + 2;
-			indices[k + 5] = (i + 1) * LongLines + j + 2;
-
-			k += 6; // next quad
-		}
-
-		indices[k] = (i * LongLines) + LongLines;
-		indices[k + 1] = (i * LongLines) + 1;
-		indices[k + 2] = ((i + 1) * LongLines) + LongLines;
-
-		indices[k + 3] = ((i + 1) * LongLines) + LongLines;
-		indices[k + 4] = (i * LongLines) + 1;
-		indices[k + 5] = ((i + 1) * LongLines) + 1;
-
-		k += 6;
-	}
-
-	for (DWORD l = 0; l < LongLines - 1; ++l)
-	{
-		indices[k] = NumSphereVertices - 1;
-		indices[k + 1] = (NumSphereVertices - 1) - (l + 1);
-		indices[k + 2] = (NumSphereVertices - 1) - (l + 2);
-		k += 3;
-	}
-
-	indices[k] = NumSphereVertices - 1;
-	indices[k + 1] = (NumSphereVertices - 1) - LongLines;
-	indices[k + 2] = NumSphereVertices - 2;
-
-	D3D11_BUFFER_DESC indexBufferDesc;
-	ZeroMemory(&indexBufferDesc, sizeof(indexBufferDesc));
-
-	indexBufferDesc.Usage = D3D11_USAGE_DEFAULT;
-	indexBufferDesc.ByteWidth = sizeof(DWORD) * NumSphereFaces * 3;
-	indexBufferDesc.BindFlags = D3D11_BIND_INDEX_BUFFER;
-	indexBufferDesc.CPUAccessFlags = 0;
-	indexBufferDesc.MiscFlags = 0;
-
-	D3D11_SUBRESOURCE_DATA iinitData;
-
-	iinitData.pSysMem = &indices[0];
-	hr = g_pGameContextD3D11->getDevice()->CreateBuffer(&indexBufferDesc, &iinitData, &g_SphereIndexBuffer);
-
 }
 
 void DetectKeyboardAndMouseEvents()

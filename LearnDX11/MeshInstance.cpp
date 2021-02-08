@@ -13,6 +13,7 @@ MeshInstance::MeshInstance(GameContextD3D11* pGameContext, Mesh* pMesh, XMMATRIX
 	, m_pParentMeshInstance(nullptr)
 	, m_localTransform(localTransform)
 	, m_enableDraw(true)
+	, m_drawnIndividually(false)
 {
 }
 
@@ -36,9 +37,9 @@ const XMMATRIX& MeshInstance::GetParentTransform() const
 	return m_pParentMeshInstance == nullptr ? XMMatrixIdentity() : (m_pParentMeshInstance->GetWorldTransform());
 }
 
-XMMATRIX MeshInstance::GetWorldTransform() const
+XMMATRIX MeshInstance::GetWorldTransform()
 {
-	return m_localTransform * GetParentTransform();
+	return m_worldTransform = m_localTransform * GetParentTransform();
 }
 
 void MeshInstance::UpdateLocalTransform(XMMATRIX newLocalTransform)
@@ -73,7 +74,27 @@ bool MeshInstance::IsEnableDraw() const
 	return m_enableDraw;
 }
 
+bool MeshInstance::IsDrawnIndividually() const
+{
+	return m_drawnIndividually;
+}
+
 void MeshInstance::SetEnableDraw(bool enableDraw)
 {
 	m_enableDraw = enableDraw;
+}
+
+void MeshInstance::SetDrawnIndividually(bool drawnIndividually)
+{
+	m_drawnIndividually = drawnIndividually;
+}
+
+void MeshInstance::DrawSelf()
+{
+	// draw all static instances
+	m_pMesh->BindVertexAndIndexBuffers();
+	//m_pGameContext->m_d3dDeviceContext->UpdateSubresource(m_pGameContext->m_constantBufferAllMeshPositions, 0, nullptr, &staticTransforms[0], 0, 0);
+	GetWorldTransform();
+	m_pGameContext->m_d3dDeviceContext->UpdateSubresource(m_pGameContext->m_CBSingleWorldMatrix, 0, nullptr, &m_worldTransform, 0, 0);
+	m_pGameContext->m_d3dDeviceContext->DrawIndexedInstanced(m_pMesh->m_indexCount, 1, 0, 0, 0);
 }
