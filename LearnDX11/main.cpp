@@ -625,7 +625,7 @@ bool ConstructWorld()
 
 	// create Camera
 	g_pCamera = new Camera();
-	g_pCamera->SetEnableFirstPersonView(false);
+	g_pCamera->SetEnableFirstPersonView(true);
 	g_pCamera->SetFollowTarget(refCubeInstances[g_carBodyIndex]);
 	g_pCamera->SetThirdViewFollowDistance(20); // 20 is default value
 	XMMATRIX debugCube = XMMatrixScaling(0.3, 0.3, 0.3);
