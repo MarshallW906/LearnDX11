@@ -254,6 +254,9 @@ void Update(float deltaTime)
 
 		MeshInstance* pFrontLeftWheel = cylinderInstances[g_carWheelsStartIndex];
 		MeshInstance* pFrontRightWheel = cylinderInstances[g_carWheelsStartIndex + 1];
+		MeshInstance* pBackLeftWheel = cylinderInstances[g_carWheelsStartIndex + 2];
+		MeshInstance* pBackRightWheel = cylinderInstances[g_carWheelsStartIndex + 3];
+
 
 		bool carShouldMove = fabsf(g_moveByInput.y) > 0;
 		bool carShouldTurn = fabsf(g_moveByInput.x) > 0;
@@ -263,13 +266,12 @@ void Update(float deltaTime)
 			// rotate front wheels around its Y-axis
 			pFrontLeftWheel->SetRotationRollPitchYaw(0, XMConvertToRadians(30 * g_moveByInput.x), XMConvertToRadians(90));
 			pFrontRightWheel->SetRotationRollPitchYaw(0, XMConvertToRadians(30 * g_moveByInput.x), XMConvertToRadians(90));
-			//
+
 			if (carShouldMove)
 			{
 				bool shouldFlipRotation = g_moveByInput.y < 0;
 				float flipRotMultiplier = shouldFlipRotation ? -1 : 1;
-				carBodyInstance->SelfRotate(XMMatrixRotationY(XMConvertToRadians(carRotateSpeed * deltaTime * g_moveByInput.x * flipRotMultiplier)));
-
+				carBodyInstance->SelfRotateByRollPitchYawInDegrees(0, carRotateSpeed * deltaTime * g_moveByInput.x * flipRotMultiplier, 0);
 			}
 		}
 		else
@@ -281,10 +283,27 @@ void Update(float deltaTime)
 		if (carShouldMove)
 		{
 			// TODO: rotate front & back wheels when moving by X-axis
-			// the following 2 lines are not correct
-			//pFrontLeftWheel->SelfRotate(XMMatrixRotationX(XMConvertToRadians(carWheelRotateSpeed)));
-			//pFrontRightWheel->SelfRotate(XMMatrixRotationX(XMConvertToRadians(carWheelRotateSpeed)));
+			bool shouldFlipRotation = g_moveByInput.y < 0;
+			float flipRotMultiplier = shouldFlipRotation ? -1 : 1;
 
+			// [!!!!!!!!!!!!!!!!FATAL!!!!!!!!!!!!!!!!!]
+			// uncomment this will show the current rotation calculation's problem
+			// which is, that localScale is totally ignored, but we need the localScale to rotate as well
+			// also, because the euler angles were pre-set above, it will actually not rotate around 360 degrees
+			/* 
+			pFrontLeftWheel->UpdateLocalTransform(
+				XMMatrixRotationY(carWheelRotateSpeed * flipRotMultiplier) * pFrontLeftWheel->GetLocalTransform()
+			);
+			pFrontRightWheel->UpdateLocalTransform(
+				XMMatrixRotationY(carWheelRotateSpeed * flipRotMultiplier) * pFrontRightWheel->GetLocalTransform()
+			);*/
+			pBackLeftWheel->UpdateLocalTransform(
+				XMMatrixRotationY(carWheelRotateSpeed * flipRotMultiplier) * pBackLeftWheel->GetLocalTransform()
+			);
+			pBackRightWheel->UpdateLocalTransform(
+				XMMatrixRotationY(carWheelRotateSpeed * flipRotMultiplier) * pBackRightWheel->GetLocalTransform()
+			);
+			
 			// TODO: Add util functions like moveForward()
 			XMVECTOR vForward = XMVector3Normalize(carBodyInstance->GetLocalTransform().r[2]);
 			XMMATRIX translation = XMMatrixTranslationFromVector(vForward * carMoveSpeed * deltaTime * g_moveByInput.y);
@@ -417,23 +436,6 @@ bool LoadAndGenerateBuffers()
 		}
 	}
 
-	// skybox shader
-	{
-		
-		g_pSkyboxShader = new VSPSShader(g_pGameContextD3D11);
-
-		D3D11_INPUT_ELEMENT_DESC skyboxLayoutDesc[] = {
-			{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, offsetof(VertexPosTexcoord, Position), D3D11_INPUT_PER_VERTEX_DATA, 0},
-			{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, offsetof(VertexPosTexcoord, TexCoord), D3D11_INPUT_PER_VERTEX_DATA, 0 }
-		};
-
-		g_pSkyboxShader->LoadAndCompileShaderWithInputLayout(
-			L"../Shaders/Skymap_VS.hlsl", "SKYMAP_VS", "vs_4_0",
-			L"../Shaders/Skymap_PS.hlsl", "SKYMAP_PS", "ps_4_0",
-			skyboxLayoutDesc, _countof(skyboxLayoutDesc)
-		);
-	}
-
 	// load image texture from a file
 	{
 		HRESULT hr = CreateWICTextureFromFile(
@@ -539,6 +541,24 @@ bool LoadAndGenerateBuffers()
 			vertexLayoutDesc, _countof(vertexLayoutDesc));
 	}
 
+	// skybox shader
+	{
+
+		g_pSkyboxShader = new VSPSShader(g_pGameContextD3D11);
+
+		D3D11_INPUT_ELEMENT_DESC skyboxLayoutDesc[] = {
+			{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, offsetof(VertexPosTexcoord, Position), D3D11_INPUT_PER_VERTEX_DATA, 0},
+			{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, offsetof(VertexPosTexcoord, TexCoord), D3D11_INPUT_PER_VERTEX_DATA, 0 }
+		};
+
+		g_pSkyboxShader->LoadAndCompileShaderWithInputLayout(
+			L"../Shaders/Skymap_VS.hlsl", "SKYMAP_VS", "vs_4_0",
+			L"../Shaders/Skymap_PS.hlsl", "SKYMAP_PS", "ps_4_0",
+			skyboxLayoutDesc, _countof(skyboxLayoutDesc)
+		);
+	}
+
+
 	{// setup the projection matrix
 		RECT clientRect;
 		GetClientRect(g_WindowHandle, &clientRect);
@@ -617,16 +637,19 @@ bool ConstructWorld()
 	// [OK] NEXT STEP 2: construct a "car" (4 cylinders under 1 cube), expose references of the "car"'s root, and its two front wheels
 	// [OK] NEXT STEP 3: add keyboard detection, WASD move the car
 	// [Partially OK (1/2)](optional) NEXT STEP 3.1: when the car is moving, apply rotation on wheels accordingly 
+	//		     [!!!!!!!!!!!!!!!!FATAL!!!!!!!!!!!!!!!!!] TODO: figure out how exactly rotation works in XMMATRIX
+	//			 The current method to calc localRotation is not a general solution
 	//		     ([Not OK] all wheels: forward/backward; [OK] front wheels: rotate left/right)
-	// NEXT STEP 4: skybox. (cubemap)
+	// [OK] NEXT STEP 4: skybox. [TODO]: Use cubemap instead of a simple textured cube diabling back-face culling
 	// [OK] NEXT STEP 5.1: camera mode: 1st person view
 	// [OK] NEXT STEP 5.2: camera mode: 3rd person view
 	// [OK] NEXT STEP 6: camera mode: switch between 1st & 3rd
 	// [OK] NEXT STEP 7: camera: mouse movement under 3rd person view: RotateAround
 	// [OK]			  Next: mouse-control rotate around
 	// [Known issue]: When camera rotates, ONLY the car followed get sheared
+	//				may be because of w-component is not correct
 	// [OK] NEXT STEP 8: camera: mouse wheel under 3rd person view: Zoom In/Out
-	// NEXT STEP 9: shader: light
+	// NEXT STEP 9: shader: light [like a simple phong equation]
 	// NEXT STEP 10: Shadow (I dont know how to do that yet)
 	return true;
 }

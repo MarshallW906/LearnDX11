@@ -22,9 +22,8 @@ public:
 	XMMATRIX GetWorldTransform();
 	void UpdateLocalTransform(XMMATRIX newLocalTransform);
 
-	// TODO: SelfRotateRelativelyFromQuat(Quat), this function may need re-writing
-	void SelfRotate(XMMATRIX rotationMatrix);
 	void SetRotationRollPitchYaw(float Pitch, float Yaw, float Roll);
+	void SelfRotateByRollPitchYawInDegrees(float pitchDiff, float yawDiff, float rollDiff);
 
 	void SetParentMeshInstance(MeshInstance* pParentMeshInstance);
 

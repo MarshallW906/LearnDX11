@@ -47,17 +47,22 @@ void MeshInstance::UpdateLocalTransform(XMMATRIX newLocalTransform)
 	m_localTransform = newLocalTransform;
 }
 
-void MeshInstance::SelfRotate(XMMATRIX rotationMatrix)
-{
-	m_localTransform = rotationMatrix * m_localTransform;
-}
-
 void MeshInstance::SetRotationRollPitchYaw(float Pitch, float Yaw, float Roll)
 {
 	XMVECTOR localScale, localRotationQuat, localTranslation;
 	XMMatrixDecompose(&localScale, &localRotationQuat, &localTranslation, m_localTransform);
 
 	XMVECTOR newRotQuat = XMQuaternionRotationRollPitchYaw(Pitch, Yaw, Roll);
+	m_localTransform = XMMatrixAffineTransformation(localScale, XMVECTOR(), newRotQuat, localTranslation);
+}
+
+void MeshInstance::SelfRotateByRollPitchYawInDegrees(float pitchDiff, float yawDiff, float rollDiff)
+{
+	XMVECTOR localScale, localRotationQuat, localTranslation;
+	XMMatrixDecompose(&localScale, &localRotationQuat, &localTranslation, m_localTransform);
+
+	XMVECTOR xmvRotQuat = XMQuaternionRotationRollPitchYaw(XMConvertToRadians(pitchDiff), XMConvertToRadians(yawDiff), XMConvertToRadians(rollDiff));
+	XMVECTOR newRotQuat = XMQuaternionMultiply(xmvRotQuat, localRotationQuat);
 	m_localTransform = XMMatrixAffineTransformation(localScale, XMVECTOR(), newRotQuat, localTranslation);
 }
 
