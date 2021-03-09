@@ -448,7 +448,7 @@ bool LoadAndGenerateBuffers()
 		HRESULT hr = CreateWICTextureFromFile(
 			g_pGameContextD3D11->m_d3dDevice,
 			g_pGameContextD3D11->m_d3dDeviceContext,
-			L"../Textures/brickwall.jpg",
+			L"./Textures/brickwall.jpg",
 			&g_pCubeTexture2DResource,
 			&g_pCubeShaderResourceView
 		);
@@ -460,7 +460,7 @@ bool LoadAndGenerateBuffers()
 		hr = CreateWICTextureFromFile(
 			g_pGameContextD3D11->m_d3dDevice,
 			g_pGameContextD3D11->m_d3dDeviceContext,
-			L"../Textures/crate2_h2.png",
+			L"./Textures/crate2_h2.png",
 			&g_pCylinderTexture2DResource,
 			&g_pCylinderShaderResourceView
 		);
@@ -472,7 +472,7 @@ bool LoadAndGenerateBuffers()
 		hr = CreateWICTextureFromFile(
 			g_pGameContextD3D11->m_d3dDevice,
 			g_pGameContextD3D11->m_d3dDeviceContext,
-			L"../Textures/skybox/top.jpg",
+			L"./Textures/skybox/top.jpg",
 			&g_pSkyboxTextureResource,
 			&g_pSkyboxShaderResourceView
 		);
@@ -543,8 +543,8 @@ bool LoadAndGenerateBuffers()
 		};
 		g_pShaderSimpleStaticMesh = new VSPSShader(g_pGameContextD3D11);
 		g_pShaderSimpleStaticMesh->LoadAndCompileShaderWithInputLayout(
-			L"../Shaders/StaticMesh_VS.hlsl", "StaticMesh_VS", "latest",
-			L"../Shaders/StaticMesh_PS.hlsl", "StaticMesh_PS", "latest",
+			L"./Shaders/StaticMesh_VS.hlsl", "StaticMesh_VS", "latest",
+			L"./Shaders/StaticMesh_PS.hlsl", "StaticMesh_PS", "latest",
 			vertexLayoutDesc, _countof(vertexLayoutDesc));
 	}
 
@@ -559,8 +559,8 @@ bool LoadAndGenerateBuffers()
 		};
 
 		g_pSkyboxShader->LoadAndCompileShaderWithInputLayout(
-			L"../Shaders/Skymap_VS.hlsl", "SKYMAP_VS", "vs_4_0",
-			L"../Shaders/Skymap_PS.hlsl", "SKYMAP_PS", "ps_4_0",
+			L"./Shaders/Skymap_VS.hlsl", "SKYMAP_VS", "vs_4_0",
+			L"./Shaders/Skymap_PS.hlsl", "SKYMAP_PS", "ps_4_0",
 			skyboxLayoutDesc, _countof(skyboxLayoutDesc)
 		);
 	}
