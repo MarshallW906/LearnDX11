@@ -260,6 +260,12 @@ void Update(float deltaTime)
 
 		bool carShouldMove = fabsf(g_moveByInput.y) > 0;
 		bool carShouldTurn = fabsf(g_moveByInput.x) > 0;
+		/*
+		XMMATRIX rot = XMMatrixRotationY(XMConvertToRadians(carRotateSpeed * deltaTime * g_moveByInput.x * 1));
+		XMMATRIX cbt = carBodyInstance->GetLocalTransform();
+		carBodyInstance->UpdateLocalTransform(
+			XMMatrixMultiply(rot, cbt)
+		);*/
 
 		if (carShouldTurn)
 		{
@@ -272,6 +278,7 @@ void Update(float deltaTime)
 				bool shouldFlipRotation = g_moveByInput.y < 0;
 				float flipRotMultiplier = shouldFlipRotation ? -1 : 1;
 				carBodyInstance->SelfRotateByRollPitchYawInDegrees(0, carRotateSpeed * deltaTime * g_moveByInput.x * flipRotMultiplier, 0);
+				
 			}
 		}
 		else
